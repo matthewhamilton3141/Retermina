@@ -1,0 +1,510 @@
+@import "tailwindcss";
+
+/*
+ * Theme engine tokens.
+ *
+ * Every engine is a block of CSS custom properties keyed off `data-theme` on
+ * <html> (set by ThemeProvider). The semantic classes further down read these
+ * tokens, so swapping the attribute re-skins the whole app with no re-render.
+ *
+ * `:root` carries the Sleek (default) values, so it doubles as the fallback:
+ * when `data-theme="sleek"` (or anything unknown) no override block matches and
+ * these apply. The other engines override only the tokens that differ.
+ */
+:root {
+  color-scheme: dark;
+
+  --rt-bg: #0a0a0a;
+  --rt-bg-image: none;
+  --rt-surface: rgba(23, 23, 23, 0.6);
+  --rt-surface-strong: rgba(23, 23, 23, 0.85);
+  --rt-surface-hover: #262626;
+  --rt-subsurface: rgba(10, 10, 10, 0.4);
+
+  --rt-border: #262626;
+  --rt-border-width: 1px;
+
+  --rt-text: #f5f5f5;
+  --rt-text-muted: #737373;
+  --rt-text-faint: #525252;
+
+  --rt-accent: #34d399;
+  --rt-accent-soft: rgba(16, 185, 129, 0.1);
+
+  --rt-radius-sm: 0.5rem;
+  --rt-radius: 0.75rem;
+  --rt-radius-lg: 1rem;
+
+  --rt-shadow-panel: 0 10px 15px -3px rgba(0, 0, 0, 0.25);
+  --rt-btn-shadow: none;
+  --rt-backdrop: none;
+  --rt-ring: rgba(16, 185, 129, 0.6);
+
+  --rt-icon-stroke: 2;
+  --rt-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+
+  --rt-terminal-bg: #0a0a0a;
+  --rt-grid-placeholder: #10b981;
+  --rt-resize-handle: rgba(212, 212, 216, 0.5);
+}
+
+/* Soft Pastel — light, airy, generously rounded, soft colored shadows. */
+[data-theme="pastel"] {
+  color-scheme: light;
+
+  --rt-bg: #f6f4fb;
+  --rt-bg-image: radial-gradient(
+      circle at 18% 0%,
+      rgba(167, 139, 250, 0.16),
+      transparent 42%
+    ),
+    radial-gradient(circle at 100% 100%, rgba(236, 72, 153, 0.12), transparent 45%);
+  --rt-surface: rgba(255, 255, 255, 0.75);
+  --rt-surface-strong: rgba(255, 255, 255, 0.9);
+  --rt-surface-hover: rgba(139, 92, 246, 0.1);
+  --rt-subsurface: rgba(255, 255, 255, 0.5);
+
+  --rt-border: #e7e1f5;
+  --rt-border-width: 1px;
+
+  --rt-text: #4c4361;
+  --rt-text-muted: #8b80a3;
+  --rt-text-faint: #aaa1c0;
+
+  --rt-accent: #8b5cf6;
+  --rt-accent-soft: rgba(139, 92, 246, 0.12);
+
+  --rt-radius-sm: 0.75rem;
+  --rt-radius: 1rem;
+  --rt-radius-lg: 1.5rem;
+
+  --rt-shadow-panel: 0 12px 32px -8px rgba(139, 92, 246, 0.25);
+  --rt-btn-shadow: none;
+  --rt-backdrop: blur(4px);
+  --rt-ring: rgba(139, 92, 246, 0.5);
+
+  --rt-icon-stroke: 1.75;
+  --rt-font-sans: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN",
+    system-ui, sans-serif;
+
+  --rt-terminal-bg: #faf7ff;
+  --rt-grid-placeholder: #8b5cf6;
+  --rt-resize-handle: rgba(139, 92, 246, 0.5);
+}
+
+/* Transparent Glass — frosted translucent panels over a deep gradient. */
+[data-theme="glass"] {
+  color-scheme: dark;
+
+  --rt-bg: #0b1220;
+  --rt-bg-image: radial-gradient(
+      circle at 15% 15%,
+      rgba(56, 189, 248, 0.18),
+      transparent 35%
+    ),
+    radial-gradient(circle at 85% 0%, rgba(168, 85, 247, 0.16), transparent 40%),
+    linear-gradient(160deg, #0b1220, #0a0f1c);
+  --rt-surface: rgba(30, 41, 59, 0.45);
+  --rt-surface-strong: rgba(30, 41, 59, 0.6);
+  --rt-surface-hover: rgba(56, 189, 248, 0.12);
+  --rt-subsurface: rgba(15, 23, 42, 0.35);
+
+  --rt-border: rgba(148, 163, 184, 0.25);
+  --rt-border-width: 1px;
+
+  --rt-text: #e2e8f0;
+  --rt-text-muted: #94a3b8;
+  --rt-text-faint: #64748b;
+
+  --rt-accent: #38bdf8;
+  --rt-accent-soft: rgba(56, 189, 248, 0.15);
+
+  --rt-radius-sm: 0.6rem;
+  --rt-radius: 0.9rem;
+  --rt-radius-lg: 1.25rem;
+
+  --rt-shadow-panel: 0 8px 32px -6px rgba(2, 6, 23, 0.55);
+  --rt-btn-shadow: none;
+  --rt-backdrop: blur(14px) saturate(140%);
+  --rt-ring: rgba(56, 189, 248, 0.6);
+
+  --rt-icon-stroke: 1.75;
+
+  --rt-terminal-bg: #0b1220;
+  --rt-grid-placeholder: #38bdf8;
+  --rt-resize-handle: rgba(148, 163, 184, 0.6);
+}
+
+/* Minimalist — flat, shadowless, hairline borders, near-monochrome on white. */
+[data-theme="minimalist"] {
+  color-scheme: light;
+
+  --rt-bg: #ffffff;
+  --rt-bg-image: none;
+  --rt-surface: #ffffff;
+  --rt-surface-strong: #fafafa;
+  --rt-surface-hover: #f4f4f5;
+  --rt-subsurface: #fafafa;
+
+  --rt-border: #ececec;
+  --rt-border-width: 1px;
+
+  --rt-text: #18181b;
+  --rt-text-muted: #71717a;
+  --rt-text-faint: #a1a1aa;
+
+  --rt-accent: #111111;
+  --rt-accent-soft: rgba(0, 0, 0, 0.06);
+
+  --rt-radius-sm: 0.25rem;
+  --rt-radius: 0.375rem;
+  --rt-radius-lg: 0.5rem;
+
+  --rt-shadow-panel: none;
+  --rt-btn-shadow: none;
+  --rt-backdrop: none;
+  --rt-ring: rgba(0, 0, 0, 0.25);
+
+  --rt-icon-stroke: 1.5;
+
+  --rt-terminal-bg: #fafafa;
+  --rt-grid-placeholder: #d4d4d8;
+  --rt-resize-handle: rgba(0, 0, 0, 0.3);
+}
+
+/* Neo-Brutalism — thick black borders, hard offset shadows, sharp corners. */
+[data-theme="brutalism"] {
+  color-scheme: light;
+
+  --rt-bg: #fafaf5;
+  --rt-bg-image: none;
+  --rt-surface: #ffffff;
+  --rt-surface-strong: #ffffff;
+  --rt-surface-hover: #f4f4f0;
+  --rt-subsurface: #fafaf5;
+
+  --rt-border: #000000;
+  --rt-border-width: 2px;
+
+  --rt-text: #0a0a0a;
+  --rt-text-muted: #3f3f46;
+  --rt-text-faint: #52525b;
+
+  --rt-accent: #16a34a;
+  --rt-accent-soft: #bbf7d0;
+
+  --rt-radius-sm: 0;
+  --rt-radius: 0;
+  --rt-radius-lg: 0;
+
+  --rt-shadow-panel: 6px 6px 0 0 #000000;
+  --rt-btn-shadow: 3px 3px 0 0 #000000;
+  --rt-backdrop: none;
+  --rt-ring: #000000;
+
+  --rt-icon-stroke: 2.75;
+  --rt-font-sans: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+
+  --rt-terminal-bg: #ffffff;
+  --rt-grid-placeholder: #16a34a;
+  --rt-resize-handle: #000000;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--rt-bg);
+  background-image: var(--rt-bg-image);
+  color: var(--rt-text);
+  font-family: var(--rt-font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * Semantic theme classes.
+ *
+ * These are intentionally unlayered: unlayered rules win over Tailwind's
+ * `@layer utilities`, so a component class reliably owns the themed structural
+ * properties (color, background, border, radius, shadow) while Tailwind utility
+ * classes still handle layout (flex, spacing, sizing) on the same element.
+ */
+.rt-app {
+  background-color: var(--rt-bg);
+  background-image: var(--rt-bg-image);
+  color: var(--rt-text);
+  font-family: var(--rt-font-sans);
+}
+
+.rt-surface {
+  background-color: var(--rt-surface);
+  border: var(--rt-border-width) solid var(--rt-border);
+  border-radius: var(--rt-radius);
+  -webkit-backdrop-filter: var(--rt-backdrop);
+  backdrop-filter: var(--rt-backdrop);
+}
+
+.rt-subsurface {
+  background-color: var(--rt-subsurface);
+}
+
+.rt-panel {
+  background-color: var(--rt-surface);
+  border: var(--rt-border-width) solid var(--rt-border);
+  border-radius: var(--rt-radius-lg);
+  box-shadow: var(--rt-shadow-panel);
+  -webkit-backdrop-filter: var(--rt-backdrop);
+  backdrop-filter: var(--rt-backdrop);
+}
+
+.rt-panel-header,
+.rt-toolbar {
+  background-color: var(--rt-surface-strong);
+  border-bottom: var(--rt-border-width) solid var(--rt-border);
+  -webkit-backdrop-filter: var(--rt-backdrop);
+  backdrop-filter: var(--rt-backdrop);
+}
+
+.rt-divider {
+  background-color: var(--rt-border);
+}
+
+/* Bottom hairline that follows the engine's border color + weight. */
+.rt-divider-b {
+  border-bottom: var(--rt-border-width) solid var(--rt-border);
+}
+
+.rt-text-muted {
+  color: var(--rt-text-muted);
+}
+
+.rt-text-faint {
+  color: var(--rt-text-faint);
+}
+
+.rt-accent-text {
+  color: var(--rt-accent);
+}
+
+/* Ghost (borderless) button — icon buttons like back / close. */
+.rt-btn {
+  color: var(--rt-text-muted);
+  background-color: transparent;
+  border-radius: var(--rt-radius-sm);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.rt-btn:hover {
+  color: var(--rt-text);
+  background-color: var(--rt-surface-hover);
+}
+
+/* Outlined button — toolbar toggles, reset, switcher trigger. */
+.rt-btn-outline {
+  color: var(--rt-text-muted);
+  background-color: transparent;
+  border: var(--rt-border-width) solid var(--rt-border);
+  border-radius: var(--rt-radius-sm);
+  box-shadow: var(--rt-btn-shadow);
+  transition: color 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.rt-btn-outline:hover {
+  color: var(--rt-text);
+  background-color: var(--rt-surface-hover);
+}
+
+/* Toggled-on state. Declared after the outline rules so it wins the shared
+ * color/background/border-color properties when both classes are applied. */
+.rt-btn-active {
+  color: var(--rt-accent);
+  background-color: var(--rt-accent-soft);
+  border-color: var(--rt-accent);
+}
+
+.rt-btn:focus-visible,
+.rt-btn-outline:focus-visible,
+.rt-card:focus-visible,
+.rt-row:focus-visible,
+.rt-menu-item:focus-visible {
+  outline: 2px solid var(--rt-ring);
+  outline-offset: 2px;
+}
+
+.rt-card {
+  color: var(--rt-text);
+  background-color: var(--rt-surface);
+  border: var(--rt-border-width) solid var(--rt-border);
+  border-radius: var(--rt-radius-lg);
+  box-shadow: var(--rt-btn-shadow);
+}
+
+.rt-card:hover {
+  border-color: var(--rt-accent);
+  background-color: var(--rt-surface-strong);
+}
+
+.rt-card-icon {
+  color: var(--rt-text-muted);
+  background-color: var(--rt-surface-hover);
+  border-radius: var(--rt-radius-sm);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.rt-card:hover .rt-card-icon {
+  color: var(--rt-accent);
+  background-color: var(--rt-accent-soft);
+}
+
+.rt-row {
+  color: var(--rt-text);
+  border-radius: var(--rt-radius-sm);
+  transition: background-color 0.15s ease;
+}
+
+.rt-row:hover {
+  background-color: var(--rt-surface-hover);
+}
+
+.rt-row-icon {
+  color: var(--rt-text-muted);
+  transition: color 0.15s ease;
+}
+
+.rt-row:hover .rt-row-icon {
+  color: var(--rt-accent);
+}
+
+.rt-badge,
+.rt-skeleton {
+  background-color: var(--rt-surface-hover);
+}
+
+.rt-badge {
+  color: var(--rt-text-muted);
+  border-radius: var(--rt-radius-sm);
+}
+
+.rt-empty {
+  border: var(--rt-border-width) dashed var(--rt-border);
+  border-radius: var(--rt-radius-lg);
+}
+
+.rt-terminal-surface {
+  background-color: var(--rt-terminal-bg);
+}
+
+.rt-menu {
+  background-color: var(--rt-surface-strong);
+  border: var(--rt-border-width) solid var(--rt-border);
+  border-radius: var(--rt-radius);
+  box-shadow: var(--rt-shadow-panel);
+  -webkit-backdrop-filter: var(--rt-backdrop);
+  backdrop-filter: var(--rt-backdrop);
+}
+
+.rt-menu-item {
+  color: var(--rt-text);
+  background-color: transparent;
+  border-radius: var(--rt-radius-sm);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.rt-menu-item:hover {
+  background-color: var(--rt-surface-hover);
+}
+
+.rt-menu-item[aria-checked="true"] {
+  color: var(--rt-accent);
+  background-color: var(--rt-accent-soft);
+}
+
+/* Keyboard-highlighted option (Iris suggestion list, arrow-key navigation). */
+.rt-menu-item[aria-selected="true"] {
+  background-color: var(--rt-surface-hover);
+}
+
+/* Iris command bar: a bottom dock that mirrors the top toolbar's surface. */
+.rt-irisbar {
+  background-color: var(--rt-surface-strong);
+  border-top: var(--rt-border-width) solid var(--rt-border);
+  -webkit-backdrop-filter: var(--rt-backdrop);
+  backdrop-filter: var(--rt-backdrop);
+}
+
+/* Text input (Iris query field). */
+.rt-input {
+  color: var(--rt-text);
+  background-color: var(--rt-subsurface);
+  border: var(--rt-border-width) solid var(--rt-border);
+  border-radius: var(--rt-radius-sm);
+}
+
+.rt-input::placeholder {
+  color: var(--rt-text-faint);
+}
+
+.rt-input:focus {
+  outline: 2px solid var(--rt-ring);
+  outline-offset: 1px;
+}
+
+/* Small contextual pill (e.g. the Iris Git branch indicator). */
+.rt-chip {
+  color: var(--rt-text-muted);
+  background-color: var(--rt-surface-hover);
+  border-radius: var(--rt-radius-sm);
+}
+
+/* Monospace output surface for captured background command results. */
+.rt-output {
+  color: var(--rt-text);
+  background-color: var(--rt-terminal-bg);
+  border: var(--rt-border-width) solid var(--rt-border);
+  border-radius: var(--rt-radius-sm);
+}
+
+/* Destructive intent on hover/focus — paired with .rt-btn-outline (kill). */
+.rt-btn-danger:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.12);
+}
+
+/* lucide SVGs flow through the Icon wrapper, which adds `rt-icon`. A CSS
+ * `stroke-width` overrides lucide's presentation attribute, so per-engine
+ * stroke weight is purely CSS — no React coupling, works inside memoized
+ * panels. An explicit `strokeWidth` prop becomes an inline style that wins. */
+.rt-icon {
+  stroke-width: var(--rt-icon-stroke);
+}
+
+/*
+ * react-grid-layout theming.
+ *
+ * Scoped under `.retermina-grid` so these rules outrank the library defaults
+ * regardless of stylesheet import order. We drop the library's data-URI resize
+ * handle in favor of the built-in corner chevron and drive the chevron and drag
+ * placeholder colors from the active engine's tokens.
+ */
+.retermina-grid .react-resizable-handle {
+  background-image: none;
+}
+
+.retermina-grid .react-grid-item > .react-resizable-handle::after {
+  border-right-color: var(--rt-resize-handle);
+  border-bottom-color: var(--rt-resize-handle);
+}
+
+.retermina-grid .react-grid-item.react-grid-placeholder {
+  background: var(--rt-grid-placeholder);
+  border-radius: var(--rt-radius-lg);
+  opacity: 0.18;
+}
