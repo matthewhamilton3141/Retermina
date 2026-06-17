@@ -47,7 +47,7 @@ Getting Started
 - Installation & Development
 
 2. Clone the repository:
- - git clone https://github.com/yourusername/retermina.git
+ - git clone https://github.com/matthewhamilton3141/retermina.git
  - cd retermina
 
 
