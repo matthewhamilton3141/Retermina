@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import GridLayout, { noCompactor, type Layout } from "react-grid-layout";
+import GridLayout, { type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
@@ -79,7 +79,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
   // `layout` prop stays referentially equal to RGL's internal state and never
   // triggers a re-sync loop.
   const handleLayoutChange = useCallback(
-    (next: Layout) => setGrid([...next]),
+    (next: Layout[]) => setGrid([...next]),
     [setGrid],
   );
 
@@ -102,6 +102,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
           </div>
         );
       }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [panels, cwd, closePanel],
   );
 
@@ -116,22 +117,29 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
       ) : (
         <GridLayout
           className="retermina-grid"
+          // ─── Dimensions ────────────────────────────────────────────────
           width={width}
+          cols={GRID_COLS}
+          rowHeight={rowHeight}
+          margin={GRID_MARGIN}
+          containerPadding={[0, 0]}
+          // ─── Layout (controlled) ────────────────────────────────────────
+          // Feed the store's grid array directly; RGL merges it with its
+          // internal bookkeeping fields without losing them.
           layout={grid}
           onLayoutChange={handleLayoutChange}
-          compactor={noCompactor}
-          gridConfig={{
-            cols: GRID_COLS,
-            rowHeight,
-            margin: GRID_MARGIN,
-            containerPadding: [0, 0],
-          }}
-          dragConfig={{
-            enabled: true,
-            handle: ".panel-drag-handle",
-            cancel: ".panel-no-drag",
-          }}
-          resizeConfig={{ enabled: true, handles: ["se", "e", "s"] }}
+          // ─── Compaction ────────────────────────────────────────────────
+          // Disable automatic compaction so panels stay where the user puts
+          // them instead of collapsing toward the top after a close/toggle.
+          compactType={null}
+          preventCollision={false}
+          // ─── Drag ───────────────────────────────────────────────────────
+          isDraggable={true}
+          draggableHandle=".panel-drag-handle"
+          draggableCancel=".panel-no-drag"
+          // ─── Resize ─────────────────────────────────────────────────────
+          isResizable={true}
+          resizeHandles={["se", "e", "s"]}
         >
           {children}
         </GridLayout>

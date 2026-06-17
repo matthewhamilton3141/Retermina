@@ -3,12 +3,11 @@
  *
  * Everything in this module is plain JSON so the entire workspace arrangement
  * (which panels are visible plus their grid coordinates and sizes) can be
- * persisted to disk and, in Step 7, exported/imported as a shareable preset.
+ * persisted to disk and exported/imported as a shareable preset.
  *
- * Coordinates and sizes are expressed in grid units, not pixels: the grid has
- * a fixed column count and the row height is derived at render time so the
- * layout scales with the window. That keeps a serialized layout meaningful on
- * any screen size.
+ * Coordinates and sizes are in grid units, not pixels: the grid has a fixed
+ * column count and the row height is derived at render time so the layout
+ * scales with the window.
  */
 import type { IconName } from "../components/Icon";
 
@@ -56,12 +55,22 @@ export interface PanelMeta {
 /** Current schema version; bump when the persisted shape changes. */
 export const WORKSPACE_LAYOUT_VERSION = 1;
 
-/** Number of columns the grid snaps to (half-width = 6, quadrant-friendly). */
+/**
+ * Number of columns the grid snaps to.
+ * 12 columns = flexible halves (6), thirds (4), quarters (3).
+ */
 export const GRID_COLS = 12;
-/** Target row count used to derive row height so the grid fills its host. */
-export const GRID_ROWS = 12;
+
+/**
+ * Target row count used to derive row height so the grid fills its host.
+ * 10 rows gives each row ~10% of the container height — enough resolution
+ * for fine placement without panels becoming micro-sized at minimum height.
+ */
+export const GRID_ROWS = 10;
+
 /** [horizontal, vertical] gap between panels, in pixels. */
-export const GRID_MARGIN: readonly [number, number] = [10, 10];
+export const GRID_MARGIN: readonly [number, number] = [8, 8];
+
 /** Smallest row height we will compute, to avoid degenerate sizes. */
 export const MIN_ROW_HEIGHT = 24;
 
@@ -79,20 +88,31 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
   localhost: { icon: "localhost", label: "Localhost" },
 };
 
-/** Default size used when a panel is (re)added from the toolbar. */
+/**
+ * Default size used when a panel is (re)added via the toolbar toggle.
+ *
+ * Sizes are intentionally modest so a re-added panel always fits on screen
+ * without pushing other panels out of view. The user can resize from there.
+ */
 export const DEFAULT_PANEL_SIZE: Record<
   PanelKind,
   Required<Pick<WorkspaceGridItem, "w" | "h" | "minW" | "minH">>
 > = {
-  terminal: { w: 6, h: 6, minW: 3, minH: 3 },
-  fileExplorer: { w: 3, h: 8, minW: 2, minH: 4 },
-  localhost: { w: 6, h: 4, minW: 3, minH: 2 },
+  //           w   h   minW  minH
+  terminal:    { w: 6, h: 5, minW: 3, minH: 2 },
+  fileExplorer:{ w: 3, h: 6, minW: 2, minH: 2 },
+  localhost:   { w: 5, h: 4, minW: 3, minH: 2 },
 };
 
 /**
- * Build the default arrangement: a tall file-explorer rail on the left, a large
- * terminal filling the top-right, and the localhost tracker beneath it. Heights
- * sum to GRID_ROWS per column so the default fills the viewport without gaps.
+ * Default layout: file-explorer rail on the left, terminal top-right,
+ * localhost tracker bottom-right.
+ *
+ * Columns: 3 + 9 = 12  ✓
+ * Rows:    terminal (6) + localhost (4) = 10  ✓  (fills GRID_ROWS exactly)
+ *          fileExplorer spans all 10 rows on the left
+ *
+ * This means on first launch every panel is fully visible with no overflow.
  */
 export function createDefaultWorkspaceLayout(): WorkspaceLayout {
   return {
@@ -103,22 +123,56 @@ export function createDefaultWorkspaceLayout(): WorkspaceLayout {
       title: PANEL_META[kind].label,
     })),
     grid: [
-      { i: PANEL_IDS.fileExplorer, x: 0, y: 0, w: 3, h: 12, minW: 2, minH: 4 },
-      { i: PANEL_IDS.terminal, x: 3, y: 0, w: 9, h: 8, minW: 3, minH: 3 },
-      { i: PANEL_IDS.localhost, x: 3, y: 8, w: 9, h: 4, minW: 3, minH: 2 },
+      // Left rail — full height
+      { i: PANEL_IDS.fileExplorer, x: 0, y: 0, w: 3, h: 10, minW: 2, minH: 2 },
+      // Top-right — main work area
+      { i: PANEL_IDS.terminal,     x: 3, y: 0, w: 9, h: 6,  minW: 3, minH: 2 },
+      // Bottom-right — localhost tracker
+      { i: PANEL_IDS.localhost,    x: 3, y: 6, w: 9, h: 4,  minW: 3, minH: 2 },
     ],
   };
 }
 
-/** Lowest free row beneath all current items (so re-added panels don't overlap). */
+/**
+ * Find a good position for a newly toggled-on panel.
+ *
+ * Strategy: scan the grid for the first 4-wide gap in the top half of the
+ * grid. If none is found, place at (0, 0) — the user can move it. We never
+ * stack panels below the visible rows, which would make them unreachable.
+ */
+export function findFreeSlot(
+  grid: readonly WorkspaceGridItem[],
+  w: number,
+  h: number,
+): { x: number; y: number } {
+  const maxY = Math.max(0, GRID_ROWS - h);
+
+  for (let y = 0; y <= maxY; y++) {
+    for (let x = 0; x <= GRID_COLS - w; x++) {
+      const overlaps = grid.some(
+        (item) =>
+          x < item.x + item.w &&
+          x + w > item.x &&
+          y < item.y + item.h &&
+          y + h > item.y,
+      );
+      if (!overlaps) return { x, y };
+    }
+  }
+
+  // Fall back to top-left; the panel will overlap but is immediately movable.
+  return { x: 0, y: 0 };
+}
+
+/** @deprecated Use findFreeSlot instead — nextFreeRow can place panels off-screen. */
 export function nextFreeRow(grid: readonly WorkspaceGridItem[]): number {
   return grid.reduce((max, item) => Math.max(max, item.y + item.h), 0);
 }
 
 /**
  * Strip a grid item down to its serializable fields. react-grid-layout enriches
- * its internal items with bookkeeping flags (`moved`, `static`, ...); this keeps
- * persisted/exported JSON limited to the schema above.
+ * its internal items with bookkeeping flags (`moved`, `static`, …); this keeps
+ * persisted/exported JSON clean.
  */
 export function sanitizeGridItem(item: WorkspaceGridItem): WorkspaceGridItem {
   const clean: WorkspaceGridItem = {
@@ -137,9 +191,7 @@ export function sanitizeGridItem(item: WorkspaceGridItem): WorkspaceGridItem {
  * Make a (possibly hand-edited or imported) layout safe to render. Panels are
  * deduped by id; grid items that reference no panel are dropped and the rest
  * are stripped to the serializable schema; and any panel left without a grid
- * item gets a freshly synthesized default-sized slot. The result always has
- * exactly one grid item per visible panel, so an external preset can never
- * desync the two arrays.
+ * item gets a freshly synthesized default-sized slot.
  */
 export function reconcileWorkspaceLayout(
   panels: readonly WorkspacePanel[],
@@ -153,9 +205,8 @@ export function reconcileWorkspaceLayout(
     cleanPanels.push({ id: panel.id, kind: panel.kind, title: panel.title });
   }
 
-  const panelIds = new Set(cleanPanels.map((panel) => panel.id));
+  const panelIds = new Set(cleanPanels.map((p) => p.id));
 
-  // Keep at most one sanitized grid item per existing panel.
   const placed = new Set<string>();
   const cleanGrid: WorkspaceGridItem[] = [];
   for (const item of grid) {
@@ -164,14 +215,14 @@ export function reconcileWorkspaceLayout(
     cleanGrid.push(sanitizeGridItem(item));
   }
 
-  // Synthesize a slot for any panel that lacks one (mirrors togglePanel sizing).
   for (const panel of cleanPanels) {
     if (placed.has(panel.id)) continue;
     const size = DEFAULT_PANEL_SIZE[panel.kind];
+    const { x, y } = findFreeSlot(cleanGrid, size.w, size.h);
     cleanGrid.push({
       i: panel.id,
-      x: 0,
-      y: nextFreeRow(cleanGrid),
+      x,
+      y,
       w: Math.min(size.w, GRID_COLS),
       h: size.h,
       minW: size.minW,

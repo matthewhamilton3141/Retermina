@@ -1,45 +1,31 @@
 /**
  * Theme engine definitions.
  *
- * Retermina ships five "structural" theme engines — they swap far more than
- * accent colors: corner radius, border weight, shadows (hard offset shadows for
- * Neo-Brutalism), backdrop blur (Transparent Glass), light vs. dark surfaces,
- * fonts, and icon stroke weight all change per engine.
- *
- * The bulk of that styling is expressed as CSS custom properties keyed off a
- * `data-theme` attribute on `<html>` (see `src/index.css`). A single attribute
- * swap re-skins the entire DOM with no React re-render — which matters because
- * the live terminal panel is memoized and must not remount on a theme change.
- *
- * This module owns the pieces that CANNOT live in CSS: the metadata used to
- * build the theme switcher, and the xterm.js color table for each engine (the
- * terminal canvas is painted from a JS object, not styled by CSS). Everything
- * here is plain data so a theme can later be exported as part of a preset.
+ * Retermina ships five "structural" theme engines. Each carries:
+ *  - CSS-side tokens (index.css, keyed off data-theme)
+ *  - An xterm.js color table (JS only — the canvas is painted, not CSS-styled)
+ *  - An accentColor string so JS integrations (Claude Code panel, etc.) can
+ *    read the active accent without touching the DOM or parsing CSS variables.
  */
 import type { ITheme } from "@xterm/xterm";
 
-/** Stable identifier for each built-in engine. */
 export type ThemeId = "pastel" | "sleek" | "glass" | "minimalist" | "brutalism";
 
-/** Human-facing metadata plus the engine's xterm color table. */
 export interface ThemeMeta {
   id: ThemeId;
   label: string;
   description: string;
-  /** xterm.js canvas colors. Painted on a canvas, so it must be JS, not CSS. */
+  /** Primary accent hex — synced to Claude Code and other JS integrations. */
+  accentColor: string;
   terminal: ITheme;
 }
 
-/**
- * Every engine, in the order the switcher lists them. The xterm palettes are
- * tuned to match each engine's CSS surface so the terminal canvas blends into
- * its panel (note the light terminals for Pastel / Minimalist / Brutalism).
- */
 export const THEMES: readonly ThemeMeta[] = [
   {
     id: "sleek",
     label: "Sleek",
     description: "Modern dark surfaces with an emerald accent.",
+    accentColor: "#34d399",
     terminal: {
       background: "#0a0a0a",
       foreground: "#e5e5e5",
@@ -68,6 +54,7 @@ export const THEMES: readonly ThemeMeta[] = [
     id: "pastel",
     label: "Soft Pastel",
     description: "Light, airy surfaces with generous rounding.",
+    accentColor: "#8b5cf6",
     terminal: {
       background: "#faf7ff",
       foreground: "#4c4361",
@@ -96,6 +83,7 @@ export const THEMES: readonly ThemeMeta[] = [
     id: "glass",
     label: "Transparent Glass",
     description: "Frosted, translucent panels over a deep gradient.",
+    accentColor: "#38bdf8",
     terminal: {
       background: "#0b1220",
       foreground: "#e2e8f0",
@@ -124,6 +112,7 @@ export const THEMES: readonly ThemeMeta[] = [
     id: "minimalist",
     label: "Minimalist",
     description: "Flat, shadowless, near-monochrome on white.",
+    accentColor: "#111111",
     terminal: {
       background: "#fafafa",
       foreground: "#27272a",
@@ -152,6 +141,7 @@ export const THEMES: readonly ThemeMeta[] = [
     id: "brutalism",
     label: "Neo-Brutalism",
     description: "Thick black borders, hard shadows, sharp corners.",
+    accentColor: "#16a34a",
     terminal: {
       background: "#ffffff",
       foreground: "#0a0a0a",
@@ -178,7 +168,6 @@ export const THEMES: readonly ThemeMeta[] = [
   },
 ];
 
-/** Engine lookup by id. */
 export const THEME_BY_ID: Record<ThemeId, ThemeMeta> = THEMES.reduce(
   (acc, theme) => {
     acc[theme.id] = theme;
@@ -187,15 +176,12 @@ export const THEME_BY_ID: Record<ThemeId, ThemeMeta> = THEMES.reduce(
   {} as Record<ThemeId, ThemeMeta>,
 );
 
-/** The engine applied on first run and used as the fallback for bad state. */
 export const DEFAULT_THEME_ID: ThemeId = "sleek";
 
-/** Runtime guard for a persisted/untrusted theme id. */
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && value in THEME_BY_ID;
 }
 
-/** Resolve any id to a known engine, falling back to the default. */
 export function resolveTheme(id: unknown): ThemeMeta {
   return isThemeId(id) ? THEME_BY_ID[id] : THEME_BY_ID[DEFAULT_THEME_ID];
 }

@@ -1,21 +1,31 @@
 @import "tailwindcss";
 
 /*
- * Theme engine tokens.
+ * ─── Theme engine tokens ───────────────────────────────────────────────────
  *
  * Every engine is a block of CSS custom properties keyed off `data-theme` on
- * <html> (set by ThemeProvider). The semantic classes further down read these
+ * <html> (set by ThemeProvider). Semantic classes further down read these
  * tokens, so swapping the attribute re-skins the whole app with no re-render.
  *
- * `:root` carries the Sleek (default) values, so it doubles as the fallback:
- * when `data-theme="sleek"` (or anything unknown) no override block matches and
- * these apply. The other engines override only the tokens that differ.
+ * :root carries the Sleek (default) values; it also doubles as the fallback.
+ *
+ * New tokens added for richer presets:
+ *   --rt-accent-2          secondary accent (gradients, highlights)
+ *   --rt-accent-gradient   ready-to-use gradient string for accent fills
+ *   --rt-header-gradient   optional gradient on toolbar / panel headers
  */
+
+/* ── Sleek (default) — near-black dark with emerald ───────────────────────── */
 :root {
   color-scheme: dark;
 
   --rt-bg: #0a0a0a;
-  --rt-bg-image: none;
+  --rt-bg-image: radial-gradient(
+      ellipse at 70% 0%,
+      rgba(52, 211, 153, 0.06),
+      transparent 55%
+    ),
+    radial-gradient(ellipse at 10% 100%, rgba(96, 165, 250, 0.04), transparent 50%);
   --rt-surface: rgba(23, 23, 23, 0.6);
   --rt-surface-strong: rgba(23, 23, 23, 0.85);
   --rt-surface-hover: #262626;
@@ -29,16 +39,20 @@
   --rt-text-faint: #525252;
 
   --rt-accent: #34d399;
-  --rt-accent-soft: rgba(16, 185, 129, 0.1);
+  --rt-accent-2: #60a5fa;
+  --rt-accent-soft: rgba(52, 211, 153, 0.1);
+  --rt-accent-gradient: linear-gradient(135deg, #34d399, #60a5fa);
+  --rt-header-gradient: none;
 
   --rt-radius-sm: 0.5rem;
   --rt-radius: 0.75rem;
   --rt-radius-lg: 1rem;
 
-  --rt-shadow-panel: 0 10px 15px -3px rgba(0, 0, 0, 0.25);
+  --rt-shadow-panel: 0 10px 15px -3px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(52, 211, 153, 0.04);
   --rt-btn-shadow: none;
   --rt-backdrop: none;
-  --rt-ring: rgba(16, 185, 129, 0.6);
+  --rt-ring: rgba(52, 211, 153, 0.6);
 
   --rt-icon-stroke: 2;
   --rt-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
@@ -49,40 +63,49 @@
   --rt-resize-handle: rgba(212, 212, 216, 0.5);
 }
 
-/* Soft Pastel — light, airy, generously rounded, soft colored shadows. */
+/* ── Soft Pastel — warm lavender light with violet accent ─────────────────── */
 [data-theme="pastel"] {
   color-scheme: light;
 
   --rt-bg: #f6f4fb;
   --rt-bg-image: radial-gradient(
       circle at 18% 0%,
-      rgba(167, 139, 250, 0.16),
+      rgba(167, 139, 250, 0.22),
       transparent 42%
     ),
-    radial-gradient(circle at 100% 100%, rgba(236, 72, 153, 0.12), transparent 45%);
-  --rt-surface: rgba(255, 255, 255, 0.75);
-  --rt-surface-strong: rgba(255, 255, 255, 0.9);
-  --rt-surface-hover: rgba(139, 92, 246, 0.1);
-  --rt-subsurface: rgba(255, 255, 255, 0.5);
+    radial-gradient(circle at 90% 90%, rgba(236, 72, 153, 0.14), transparent 45%),
+    radial-gradient(circle at 55% 50%, rgba(139, 92, 246, 0.05), transparent 60%);
+  --rt-surface: rgba(255, 255, 255, 0.8);
+  --rt-surface-strong: rgba(255, 255, 255, 0.95);
+  --rt-surface-hover: rgba(139, 92, 246, 0.08);
+  --rt-subsurface: rgba(246, 244, 251, 0.7);
 
-  --rt-border: #e7e1f5;
+  --rt-border: #e2d9f3;
   --rt-border-width: 1px;
 
-  --rt-text: #4c4361;
-  --rt-text-muted: #8b80a3;
-  --rt-text-faint: #aaa1c0;
+  --rt-text: #3d3356;
+  --rt-text-muted: #7c6fa0;
+  --rt-text-faint: #b0a8cc;
 
   --rt-accent: #8b5cf6;
+  --rt-accent-2: #ec4899;
   --rt-accent-soft: rgba(139, 92, 246, 0.12);
+  --rt-accent-gradient: linear-gradient(135deg, #8b5cf6, #ec4899);
+  --rt-header-gradient: linear-gradient(
+    90deg,
+    rgba(139, 92, 246, 0.06),
+    transparent
+  );
 
   --rt-radius-sm: 0.75rem;
-  --rt-radius: 1rem;
-  --rt-radius-lg: 1.5rem;
+  --rt-radius: 1.1rem;
+  --rt-radius-lg: 1.6rem;
 
-  --rt-shadow-panel: 0 12px 32px -8px rgba(139, 92, 246, 0.25);
+  --rt-shadow-panel: 0 12px 36px -8px rgba(139, 92, 246, 0.2),
+    0 2px 8px -2px rgba(139, 92, 246, 0.08);
   --rt-btn-shadow: none;
-  --rt-backdrop: blur(4px);
-  --rt-ring: rgba(139, 92, 246, 0.5);
+  --rt-backdrop: blur(6px) saturate(160%);
+  --rt-ring: rgba(139, 92, 246, 0.55);
 
   --rt-icon-stroke: 1.75;
   --rt-font-sans: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN",
@@ -90,27 +113,28 @@
 
   --rt-terminal-bg: #faf7ff;
   --rt-grid-placeholder: #8b5cf6;
-  --rt-resize-handle: rgba(139, 92, 246, 0.5);
+  --rt-resize-handle: rgba(139, 92, 246, 0.45);
 }
 
-/* Transparent Glass — frosted translucent panels over a deep gradient. */
+/* ── Transparent Glass — deep navy with cyan + violet bloom ───────────────── */
 [data-theme="glass"] {
   color-scheme: dark;
 
-  --rt-bg: #0b1220;
+  --rt-bg: #080e1a;
   --rt-bg-image: radial-gradient(
-      circle at 15% 15%,
-      rgba(56, 189, 248, 0.18),
-      transparent 35%
+      ellipse at 15% 15%,
+      rgba(56, 189, 248, 0.22),
+      transparent 38%
     ),
-    radial-gradient(circle at 85% 0%, rgba(168, 85, 247, 0.16), transparent 40%),
-    linear-gradient(160deg, #0b1220, #0a0f1c);
-  --rt-surface: rgba(30, 41, 59, 0.45);
-  --rt-surface-strong: rgba(30, 41, 59, 0.6);
-  --rt-surface-hover: rgba(56, 189, 248, 0.12);
-  --rt-subsurface: rgba(15, 23, 42, 0.35);
+    radial-gradient(ellipse at 85% 5%, rgba(168, 85, 247, 0.2), transparent 42%),
+    radial-gradient(ellipse at 50% 85%, rgba(34, 211, 238, 0.1), transparent 50%),
+    linear-gradient(160deg, #080e1a 0%, #0a0f1c 100%);
+  --rt-surface: rgba(20, 30, 50, 0.4);
+  --rt-surface-strong: rgba(20, 30, 50, 0.58);
+  --rt-surface-hover: rgba(56, 189, 248, 0.1);
+  --rt-subsurface: rgba(8, 14, 26, 0.35);
 
-  --rt-border: rgba(148, 163, 184, 0.25);
+  --rt-border: rgba(148, 163, 184, 0.18);
   --rt-border-width: 1px;
 
   --rt-text: #e2e8f0;
@@ -118,25 +142,35 @@
   --rt-text-faint: #64748b;
 
   --rt-accent: #38bdf8;
-  --rt-accent-soft: rgba(56, 189, 248, 0.15);
+  --rt-accent-2: #a78bfa;
+  --rt-accent-soft: rgba(56, 189, 248, 0.14);
+  --rt-accent-gradient: linear-gradient(135deg, #38bdf8, #a78bfa);
+  --rt-header-gradient: linear-gradient(
+    90deg,
+    rgba(56, 189, 248, 0.08),
+    rgba(168, 85, 247, 0.06),
+    transparent
+  );
 
   --rt-radius-sm: 0.6rem;
   --rt-radius: 0.9rem;
-  --rt-radius-lg: 1.25rem;
+  --rt-radius-lg: 1.3rem;
 
-  --rt-shadow-panel: 0 8px 32px -6px rgba(2, 6, 23, 0.55);
+  --rt-shadow-panel: 0 8px 40px -6px rgba(2, 6, 23, 0.6),
+    0 0 0 1px rgba(56, 189, 248, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --rt-btn-shadow: none;
-  --rt-backdrop: blur(14px) saturate(140%);
-  --rt-ring: rgba(56, 189, 248, 0.6);
+  --rt-backdrop: blur(16px) saturate(150%) brightness(1.05);
+  --rt-ring: rgba(56, 189, 248, 0.65);
 
   --rt-icon-stroke: 1.75;
 
-  --rt-terminal-bg: #0b1220;
+  --rt-terminal-bg: #080e1a;
   --rt-grid-placeholder: #38bdf8;
-  --rt-resize-handle: rgba(148, 163, 184, 0.6);
+  --rt-resize-handle: rgba(148, 163, 184, 0.5);
 }
 
-/* Minimalist — flat, shadowless, hairline borders, near-monochrome on white. */
+/* ── Minimalist — white, hairline, zero decoration ───────────────────────── */
 [data-theme="minimalist"] {
   color-scheme: light;
 
@@ -147,7 +181,7 @@
   --rt-surface-hover: #f4f4f5;
   --rt-subsurface: #fafafa;
 
-  --rt-border: #ececec;
+  --rt-border: #e4e4e7;
   --rt-border-width: 1px;
 
   --rt-text: #18181b;
@@ -155,7 +189,10 @@
   --rt-text-faint: #a1a1aa;
 
   --rt-accent: #111111;
-  --rt-accent-soft: rgba(0, 0, 0, 0.06);
+  --rt-accent-2: #52525b;
+  --rt-accent-soft: rgba(0, 0, 0, 0.05);
+  --rt-accent-gradient: linear-gradient(135deg, #111111, #52525b);
+  --rt-header-gradient: none;
 
   --rt-radius-sm: 0.25rem;
   --rt-radius: 0.375rem;
@@ -164,16 +201,16 @@
   --rt-shadow-panel: none;
   --rt-btn-shadow: none;
   --rt-backdrop: none;
-  --rt-ring: rgba(0, 0, 0, 0.25);
+  --rt-ring: rgba(0, 0, 0, 0.2);
 
   --rt-icon-stroke: 1.5;
 
   --rt-terminal-bg: #fafafa;
   --rt-grid-placeholder: #d4d4d8;
-  --rt-resize-handle: rgba(0, 0, 0, 0.3);
+  --rt-resize-handle: rgba(0, 0, 0, 0.25);
 }
 
-/* Neo-Brutalism — thick black borders, hard offset shadows, sharp corners. */
+/* ── Neo-Brutalism — cream, thick black borders, hard offset shadows ──────── */
 [data-theme="brutalism"] {
   color-scheme: light;
 
@@ -181,7 +218,7 @@
   --rt-bg-image: none;
   --rt-surface: #ffffff;
   --rt-surface-strong: #ffffff;
-  --rt-surface-hover: #f4f4f0;
+  --rt-surface-hover: #f4f4ee;
   --rt-subsurface: #fafaf5;
 
   --rt-border: #000000;
@@ -192,7 +229,10 @@
   --rt-text-faint: #52525b;
 
   --rt-accent: #16a34a;
+  --rt-accent-2: #dc2626;
   --rt-accent-soft: #bbf7d0;
+  --rt-accent-gradient: linear-gradient(135deg, #16a34a, #15803d);
+  --rt-header-gradient: none;
 
   --rt-radius-sm: 0;
   --rt-radius: 0;
@@ -211,6 +251,8 @@
   --rt-resize-handle: #000000;
 }
 
+/* ── Base layout ────────────────────────────────────────────────────────────── */
+
 html,
 body,
 #root {
@@ -227,17 +269,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/*
- * Semantic theme classes.
+/* ── Semantic theme classes ─────────────────────────────────────────────────
  *
- * These are intentionally unlayered: unlayered rules win over Tailwind's
- * `@layer utilities`, so a component class reliably owns the themed structural
- * properties (color, background, border, radius, shadow) while Tailwind utility
- * classes still handle layout (flex, spacing, sizing) on the same element.
+ * Intentionally unlayered so these win over Tailwind @layer utilities,
+ * meaning themed structural properties (color, bg, border, radius, shadow)
+ * reliably own their properties while Tailwind handles layout on the same el.
  */
 .rt-app {
   background-color: var(--rt-bg);
   background-image: var(--rt-bg-image);
+  background-attachment: fixed;
   color: var(--rt-text);
   font-family: var(--rt-font-sans);
 }
@@ -261,11 +302,13 @@ body {
   box-shadow: var(--rt-shadow-panel);
   -webkit-backdrop-filter: var(--rt-backdrop);
   backdrop-filter: var(--rt-backdrop);
+  transition: box-shadow 0.15s ease;
 }
 
 .rt-panel-header,
 .rt-toolbar {
   background-color: var(--rt-surface-strong);
+  background-image: var(--rt-header-gradient);
   border-bottom: var(--rt-border-width) solid var(--rt-border);
   -webkit-backdrop-filter: var(--rt-backdrop);
   backdrop-filter: var(--rt-backdrop);
@@ -275,7 +318,6 @@ body {
   background-color: var(--rt-border);
 }
 
-/* Bottom hairline that follows the engine's border color + weight. */
 .rt-divider-b {
   border-bottom: var(--rt-border-width) solid var(--rt-border);
 }
@@ -292,7 +334,14 @@ body {
   color: var(--rt-accent);
 }
 
-/* Ghost (borderless) button — icon buttons like back / close. */
+.rt-accent-gradient-text {
+  background: var(--rt-accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Ghost button */
 .rt-btn {
   color: var(--rt-text-muted);
   background-color: transparent;
@@ -305,7 +354,7 @@ body {
   background-color: var(--rt-surface-hover);
 }
 
-/* Outlined button — toolbar toggles, reset, switcher trigger. */
+/* Outlined button */
 .rt-btn-outline {
   color: var(--rt-text-muted);
   background-color: transparent;
@@ -321,8 +370,6 @@ body {
   background-color: var(--rt-surface-hover);
 }
 
-/* Toggled-on state. Declared after the outline rules so it wins the shared
- * color/background/border-color properties when both classes are applied. */
 .rt-btn-active {
   color: var(--rt-accent);
   background-color: var(--rt-accent-soft);
@@ -344,11 +391,14 @@ body {
   border: var(--rt-border-width) solid var(--rt-border);
   border-radius: var(--rt-radius-lg);
   box-shadow: var(--rt-btn-shadow);
+  transition: border-color 0.15s ease, background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .rt-card:hover {
   border-color: var(--rt-accent);
   background-color: var(--rt-surface-strong);
+  box-shadow: var(--rt-shadow-panel);
 }
 
 .rt-card-icon {
@@ -426,20 +476,18 @@ body {
   background-color: var(--rt-accent-soft);
 }
 
-/* Keyboard-highlighted option (Iris suggestion list, arrow-key navigation). */
 .rt-menu-item[aria-selected="true"] {
   background-color: var(--rt-surface-hover);
 }
 
-/* Iris command bar: a bottom dock that mirrors the top toolbar's surface. */
 .rt-irisbar {
   background-color: var(--rt-surface-strong);
+  background-image: var(--rt-header-gradient);
   border-top: var(--rt-border-width) solid var(--rt-border);
   -webkit-backdrop-filter: var(--rt-backdrop);
   backdrop-filter: var(--rt-backdrop);
 }
 
-/* Text input (Iris query field). */
 .rt-input {
   color: var(--rt-text);
   background-color: var(--rt-subsurface);
@@ -456,14 +504,12 @@ body {
   outline-offset: 1px;
 }
 
-/* Small contextual pill (e.g. the Iris Git branch indicator). */
 .rt-chip {
   color: var(--rt-text-muted);
   background-color: var(--rt-surface-hover);
   border-radius: var(--rt-radius-sm);
 }
 
-/* Monospace output surface for captured background command results. */
 .rt-output {
   color: var(--rt-text);
   background-color: var(--rt-terminal-bg);
@@ -471,29 +517,23 @@ body {
   border-radius: var(--rt-radius-sm);
 }
 
-/* Destructive intent on hover/focus — paired with .rt-btn-outline (kill). */
 .rt-btn-danger:hover {
   color: #ef4444;
   border-color: #ef4444;
   background-color: rgba(239, 68, 68, 0.12);
 }
 
-/* lucide SVGs flow through the Icon wrapper, which adds `rt-icon`. A CSS
- * `stroke-width` overrides lucide's presentation attribute, so per-engine
- * stroke weight is purely CSS — no React coupling, works inside memoized
- * panels. An explicit `strokeWidth` prop becomes an inline style that wins. */
 .rt-icon {
   stroke-width: var(--rt-icon-stroke);
 }
 
-/*
- * react-grid-layout theming.
- *
- * Scoped under `.retermina-grid` so these rules outrank the library defaults
- * regardless of stylesheet import order. We drop the library's data-URI resize
- * handle in favor of the built-in corner chevron and drive the chevron and drag
- * placeholder colors from the active engine's tokens.
- */
+/* ── Claude Code panel accent strip ──────────────────────────────────────── */
+.rt-cc-accent-bar {
+  background: var(--rt-accent-gradient);
+}
+
+/* ── react-grid-layout theming ───────────────────────────────────────────── */
+
 .retermina-grid .react-resizable-handle {
   background-image: none;
 }
@@ -504,7 +544,25 @@ body {
 }
 
 .retermina-grid .react-grid-item.react-grid-placeholder {
-  background: var(--rt-grid-placeholder);
+  background: var(--rt-accent-gradient);
   border-radius: var(--rt-radius-lg);
-  opacity: 0.18;
+  opacity: 0.2;
+}
+
+/* Smooth transitions when panels appear/disappear — but not during drag */
+.retermina-grid .react-grid-item {
+  transition: box-shadow 0.15s ease;
+}
+
+.retermina-grid .react-grid-item.cssTransforms {
+  transition-property: transform, box-shadow;
+  transition-duration: 0.15s, 0.15s;
+}
+
+/* Theme-switcher accent swatch dots */
+.rt-theme-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
