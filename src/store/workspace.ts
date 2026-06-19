@@ -8,9 +8,9 @@ import {
   PANEL_META,
   WORKSPACE_LAYOUT_VERSION,
   createDefaultWorkspaceLayout,
+  findFreeSlot,
   isWorkspaceGridArray,
   isWorkspacePanelArray,
-  nextFreeRow,
   sanitizeGridItem,
   type PanelKind,
   type WorkspaceGridItem,
@@ -54,13 +54,21 @@ export const useWorkspaceStore = create<WorkspaceLayoutState>()(
                 grid: state.grid.filter((item) => item.i !== id),
               };
             }
+
             const size = DEFAULT_PANEL_SIZE[kind];
+            const w = Math.min(size.w, GRID_COLS);
+            const h = size.h;
+            // Find an empty gap in the visible grid instead of stacking
+            // below the last row — that could push the panel off screen
+            // where the user would never see it appear.
+            const { x, y } = findFreeSlot(state.grid, w, h);
+
             const item: WorkspaceGridItem = {
               i: id,
-              x: 0,
-              y: nextFreeRow(state.grid),
-              w: Math.min(size.w, GRID_COLS),
-              h: size.h,
+              x,
+              y,
+              w,
+              h,
               minW: size.minW,
               minH: size.minH,
             };
