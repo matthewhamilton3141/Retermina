@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import GridLayout, { noCompactor, type Layout } from "react-grid-layout";
+import GridLayout, { noCompactor, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
@@ -83,6 +83,40 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
     [setGrid],
   );
 
+  // Swap-on-drop: when a dragged panel lands on top of another, send the
+  // displaced panel to where the drag started instead of letting it fly
+  // outside the grid bounds (which makes it unrecoverable with noCompactor).
+  const handleDragStop = useCallback(
+    (_layout: Layout, oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
+      if (!oldItem || !newItem) return;
+
+      // Find every panel that the dropped item now overlaps.
+      const displaced = _layout.filter(
+        (item) =>
+          item.i !== newItem.i &&
+          newItem.x < item.x + item.w &&
+          newItem.x + newItem.w > item.x &&
+          newItem.y < item.y + item.h &&
+          newItem.y + newItem.h > item.y,
+      );
+      if (displaced.length === 0) return;
+
+      // Send each displaced panel to the drag-origin position, clamping to
+      // ensure it never escapes the grid bounds regardless of size.
+      const swapped = _layout.map((item) => {
+        if (!displaced.find((d) => d.i === item.i)) return item;
+        return {
+          ...item,
+          x: Math.max(0, Math.min(oldItem.x, GRID_COLS - item.w)),
+          y: Math.max(0, Math.min(oldItem.y, GRID_ROWS - item.h)),
+        };
+      });
+
+      setGrid([...swapped]);
+    },
+    [setGrid],
+  );
+
   // Rebuild children only when the panel set or cwd changes — never on
   // drag/resize — so the live terminal subtree is preserved across moves.
   const children = useMemo(
@@ -119,6 +153,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
           width={width}
           layout={grid}
           onLayoutChange={handleLayoutChange}
+          onDragStop={handleDragStop}
           compactor={noCompactor}
           gridConfig={{
             cols: GRID_COLS,

@@ -221,7 +221,18 @@
 html,
 body,
 #root {
+  width: 100%;
   height: 100%;
+}
+
+/* Clip to rounded corners on the transparent window, and paint a solid
+ * background on html itself so that during resize the newly-exposed WebView
+ * area never flashes black before React repaints. body/rt-app layer their own
+ * theme backgrounds on top; this is just the backstop. */
+html {
+  background-color: var(--rt-bg);
+  border-radius: 0.75rem;
+  overflow: hidden;
 }
 
 body {
