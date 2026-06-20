@@ -100,7 +100,7 @@
   /* App shell background: semi-transparent so desktop shows through.
    * Tauri window needs transparent:true for this to reach the desktop;
    * without it, the bg color is what's blurred, which still looks glassy. */
-  --rt-bg: rgba(210, 215, 225, 0.55);
+  --rt-bg: rgba(240, 242, 246, 0.65);
   --rt-bg-image: none;
 
   /* Panels: frosted-glass — semi-transparent white so blurred bg shows through. */
@@ -141,6 +141,22 @@
 [data-theme="glass"] .rt-app {
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
+}
+
+/* Solid popouts — menus and the Iris bar must be fully opaque so they float
+ * cleanly above the frosted shell instead of compounding the blur. */
+[data-theme="glass"] .rt-menu {
+  background-color: #ffffff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="glass"] .rt-irisbar {
+  background-color: #ffffff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
 }
 
 /* Minimalist — flat, shadowless, hairline borders, near-monochrome on white. */
@@ -198,8 +214,8 @@
   --rt-text-muted: #3f3f46;
   --rt-text-faint: #52525b;
 
-  --rt-accent: #ea580c;
-  --rt-accent-soft: #fed7aa;
+  --rt-accent: #16a34a;
+  --rt-accent-soft: #bbf7d0;
 
   --rt-radius-sm: 0;
   --rt-radius: 0;
@@ -588,6 +604,9 @@ body {
   padding: 0;
   cursor: pointer;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .rt-tl-close { background-color: #ff5f57; }

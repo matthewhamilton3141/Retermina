@@ -50,28 +50,40 @@ export function TitleBar() {
       onMouseDown={handleMouseDown}
     >
       {/* Traffic lights — left-aligned, macOS convention */}
-      <div className="flex items-center gap-1.5 px-3">
+      <div className="group flex items-center gap-1.5 px-3">
         <button
           type="button"
           className="rt-tl rt-tl-close"
           title="Close"
           aria-label="Close window"
           onClick={() => appWindow.close()}
-        />
+        >
+          <svg className="w-2 h-2 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 12 12">
+            <path stroke="rgba(0,0,0,0.6)" strokeWidth="1.2" strokeLinecap="round" d="M 3 3 L 9 9 M 9 3 L 3 9" />
+          </svg>
+        </button>
         <button
           type="button"
           className="rt-tl rt-tl-min"
           title="Minimize"
           aria-label="Minimize window"
           onClick={() => appWindow.minimize()}
-        />
+        >
+          <svg className="w-2 h-2 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 12 12">
+            <path stroke="rgba(0,0,0,0.6)" strokeWidth="1.2" strokeLinecap="round" d="M 2.5 6 L 9.5 6" />
+          </svg>
+        </button>
         <button
           type="button"
           className="rt-tl rt-tl-max"
           title={maximized ? "Restore" : "Maximize"}
           aria-label={maximized ? "Restore window" : "Maximize window"}
           onClick={() => appWindow.toggleMaximize()}
-        />
+        >
+          <svg className="w-2 h-2 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 12 12">
+            <path fill="rgba(0,0,0,0.6)" d="M 2.5 2.5 L 7.5 2.5 L 2.5 7.5 Z M 9.5 9.5 L 4.5 9.5 L 9.5 4.5 Z" />
+          </svg>
+        </button>
       </div>
 
       {/* Remaining space is a drag target — cursor reinforces affordance */}
