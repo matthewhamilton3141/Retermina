@@ -142,6 +142,17 @@ export function IrisBar({ cwd }: IrisBarProps) {
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (event.key === "Tab" && open && suggestions.length > 0) {
+      // Without this branch, Tab falls through to the browser's default
+      // focus-navigation behavior. If focus has already moved to (or is
+      // captured by) the terminal, that default behavior can manifest as a
+      // literal tab character landing in the shell instead of completing the
+      // highlighted suggestion — Tab needs to be claimed here the same way
+      // Enter already is, including preventDefault so neither the browser's
+      // default nor anything downstream (xterm's own key handling) ever sees it.
+      event.preventDefault();
+      const suggestion = suggestions[safeIndex];
+      if (suggestion) void runSuggestion(suggestion);
     } else if (event.key === "Escape" && open) {
       event.preventDefault();
       setOpen(false);
@@ -202,7 +213,15 @@ export function IrisBar({ cwd }: IrisBarProps) {
                 role="option"
                 aria-selected={index === safeIndex}
                 onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => void runSuggestion(suggestion)}
+                onMouseDown={(event) => {
+                  // Acting on mousedown (and preventing its default) instead of
+                  // click keeps the Iris <input> from ever blurring in between —
+                  // a blur here could let something else (terminal focus, the
+                  // outside-click handler) react and unmount/reposition this
+                  // list before the click event would otherwise have fired.
+                  event.preventDefault();
+                  void runSuggestion(suggestion);
+                }}
                 className="rt-menu-item flex w-full items-center gap-2.5 px-2.5 py-2 text-left"
               >
                 <Icon

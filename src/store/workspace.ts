@@ -54,7 +54,6 @@ export const useWorkspaceStore = create<WorkspaceLayoutState>()(
                 grid: state.grid.filter((item) => item.i !== id),
               };
             }
-
             const size = DEFAULT_PANEL_SIZE[kind];
             const w = Math.min(size.w, GRID_COLS);
             const h = size.h;

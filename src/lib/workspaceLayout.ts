@@ -12,13 +12,20 @@
 import type { IconName } from "../components/Icon";
 
 /** The kinds of widget the workspace can host. */
-export type PanelKind = "terminal" | "fileExplorer" | "localhost";
+export type PanelKind =
+  | "terminal"
+  | "fileExplorer"
+  | "localhost"
+  | "codeView"
+  | "claudeCode";
 
 /** Every supported panel kind, in default display order. */
 export const PANEL_KINDS: readonly PanelKind[] = [
   "fileExplorer",
   "terminal",
+  "codeView",
   "localhost",
+  "claudeCode",
 ];
 
 /** A visible panel instance. `id` doubles as the grid item key. */
@@ -79,6 +86,8 @@ export const PANEL_IDS: Record<PanelKind, string> = {
   terminal: "terminal",
   fileExplorer: "file-explorer",
   localhost: "localhost",
+  codeView: "code-view",
+  claudeCode: "claude-code",
 };
 
 /** Icon + label for each panel kind. Single source of truth for chrome text. */
@@ -86,6 +95,8 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
   terminal: { icon: "terminal", label: "Terminal" },
   fileExplorer: { icon: "explorer", label: "Explorer" },
   localhost: { icon: "localhost", label: "Localhost" },
+  codeView: { icon: "code", label: "Code" },
+  claudeCode: { icon: "bot", label: "Claude Code" },
 };
 
 /**
@@ -93,42 +104,75 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
  *
  * Sizes are intentionally modest so a re-added panel always fits on screen
  * without pushing other panels out of view. The user can resize from there.
+ *
+ * None of these leave a panel flush against GRID_COLS/GRID_ROWS on a growable
+ * edge — react-grid-layout clamps resize growth at the grid boundary with no
+ * visual "you're maxed out" feedback, so a panel pinned flush to an edge reads
+ * as "resizing doesn't work" in that direction. Leaving at least one column/row
+ * of slack keeps every panel actually resizable both wider/taller and
+ * narrower/shorter from its default size.
  */
 export const DEFAULT_PANEL_SIZE: Record<
   PanelKind,
   Required<Pick<WorkspaceGridItem, "w" | "h" | "minW" | "minH">>
 > = {
   //           w   h   minW  minH
-  terminal:    { w: 6, h: 5, minW: 3, minH: 2 },
-  fileExplorer:{ w: 3, h: 6, minW: 2, minH: 2 },
-  localhost:   { w: 5, h: 4, minW: 3, minH: 2 },
+  terminal:    { w: 8, h: 5, minW: 3, minH: 2 },
+  fileExplorer:{ w: 3, h: 5, minW: 2, minH: 2 },
+  codeView:    { w: 8, h: 4, minW: 3, minH: 2 },
+  localhost:   { w: 3, h: 4, minW: 2, minH: 2 },
+  // A real working terminal pane, not a cramped sidebar strip, sized to dock
+  // comfortably alongside Terminal, Code View, or Localhost. The default
+  // 4-panel layout fully tiles the grid (by design — see the resize-cap note
+  // above), so toggling on a 5th panel of any size lands via findFreeSlot's
+  // overlap fallback at first; the user drags it into place once, same as
+  // adding any other panel beyond the default four.
+  claudeCode:  { w: 4, h: 4, minW: 3, minH: 2 },
 };
 
 /**
- * Default layout: file-explorer rail on the left, terminal top-right,
- * localhost tracker bottom-right.
+ * Panel kinds present on first launch. `claudeCode` is deliberately excluded:
+ * it auto-runs the `claude` CLI as soon as its terminal connects (see the
+ * panel's renderer in panels.tsx), and silently launching an external binary
+ * the user may not have installed isn't something a default layout should do
+ * unprompted. It still gets a toolbar toggle (PANEL_KINDS drives that), so
+ * docking it is one click away — it's opt-in, not hidden.
+ */
+const DEFAULT_VISIBLE_PANEL_KINDS: readonly PanelKind[] = [
+  "fileExplorer",
+  "terminal",
+  "codeView",
+  "localhost",
+];
+
+/**
+ * Default layout: a narrow rail on the left (Explorer on top, the more
+ * lightweight Localhost tracker beneath it — both share Explorer's width
+ * rather than spanning the full right side), with Terminal and the new Code
+ * panel filling the wider right-hand area Localhost used to occupy.
  *
- * Columns: 3 + 9 = 12  ✓
- * Rows:    terminal (6) + localhost (4) = 10  ✓  (fills GRID_ROWS exactly)
- *          fileExplorer spans all 10 rows on the left
- *
- * This means on first launch every panel is fully visible with no overflow.
+ * Columns: 3 (rail) + 8 (main) = 11 of 12 — one column of right-edge slack so
+ * Terminal/Code can still grow wider via the `e`/`se` handles.
+ * Rows: rail splits 5/5 of 10; main splits 5 (terminal) + 4 (code) of 9 rows,
+ * leaving one row of bottom-edge slack on the main column too.
  */
 export function createDefaultWorkspaceLayout(): WorkspaceLayout {
   return {
     version: WORKSPACE_LAYOUT_VERSION,
-    panels: PANEL_KINDS.map((kind) => ({
+    panels: DEFAULT_VISIBLE_PANEL_KINDS.map((kind) => ({
       id: PANEL_IDS[kind],
       kind,
       title: PANEL_META[kind].label,
     })),
     grid: [
-      // Left rail — full height
-      { i: PANEL_IDS.fileExplorer, x: 0, y: 0, w: 3, h: 10, minW: 2, minH: 2 },
-      // Top-right — main work area
-      { i: PANEL_IDS.terminal,     x: 3, y: 0, w: 9, h: 6,  minW: 3, minH: 2 },
-      // Bottom-right — localhost tracker
-      { i: PANEL_IDS.localhost,    x: 3, y: 6, w: 9, h: 4,  minW: 3, minH: 2 },
+      // Left rail, top — file explorer
+      { i: PANEL_IDS.fileExplorer, x: 0, y: 0, w: 3, h: 5, minW: 2, minH: 2 },
+      // Left rail, bottom — localhost tracker (now the same width as Explorer)
+      { i: PANEL_IDS.localhost,    x: 0, y: 5, w: 3, h: 4, minW: 2, minH: 2 },
+      // Main column, top — terminal (the space Localhost used to occupy)
+      { i: PANEL_IDS.terminal,     x: 3, y: 0, w: 8, h: 5, minW: 3, minH: 2 },
+      // Main column, bottom — code view
+      { i: PANEL_IDS.codeView,     x: 3, y: 5, w: 8, h: 4, minW: 3, minH: 2 },
     ],
   };
 }

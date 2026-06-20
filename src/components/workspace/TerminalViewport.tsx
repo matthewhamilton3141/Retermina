@@ -29,6 +29,25 @@ export interface TerminalViewportProps {
   className?: string;
   /** Called when the shell process exits. */
   onExit?: () => void;
+  /**
+   * A command line to run automatically once the PTY session connects, sent
+   * the same way Iris sends a command: the literal text followed by a carriage
+   * return. Runs after any input the user already typed while the session was
+   * still connecting (that queue is flushed first), so it behaves like the
+   * first thing typed into a fresh shell rather than racing ahead of it.
+   */
+  initialCommand?: string;
+  /**
+   * Whether this viewport registers itself as the terminal Iris drives.
+   * Defaults to true, matching the original (sole) Terminal panel's behavior.
+   * A second concurrent terminal-like panel — e.g. the Claude Code panel,
+   * which deliberately runs its own dedicated CLI session — should pass
+   * `false` so it doesn't contend with the regular Terminal panel for Iris's
+   * single active-terminal slot; commands typed into Iris should always reach
+   * the user's actual shell, not whichever panel happened to mount or focus
+   * most recently.
+   */
+  registerWithBus?: boolean;
 }
 
 /**
@@ -40,11 +59,20 @@ export function TerminalViewport({
   cwd = null,
   className,
   onExit,
+  initialCommand,
+  registerWithBus = true,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Keep the latest onExit without re-running the (heavy) PTY effect.
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  // Same pattern as onExit: the effect below only runs once per `cwd`, so a
+  // ref keeps it reading the current initialCommand without needing it in the
+  // dependency array (which would otherwise tear down and respawn the shell
+  // every time the prop identity changed, even though it's only meant to fire
+  // once at session start).
+  const initialCommandRef = useRef(initialCommand);
+  initialCommandRef.current = initialCommand;
 
   // The terminal canvas is painted from a JS color table (not CSS), so it must
   // react to theme changes itself. A ref mirrors the latest engine palette so
@@ -112,15 +140,22 @@ export function TerminalViewport({
         for (const input of pendingInput) void writeToPty(id, input);
         pendingInput.length = 0;
         term.focus();
-        // Expose this session to Iris so it can run commands here. Registered
-        // through the module-level bus (not React state) so the command bar
-        // never re-renders this memoized panel.
-        terminalBus.set({
-          sessionId: id,
-          run: (command) => void writeToPty(id, `${command}\r`),
-          write: (data) => void writeToPty(id, data),
-          focus: () => term.focus(),
-        });
+        // Fire once per session, after any buffered keystrokes — same shape as
+        // Iris's own terminalBus.run, just sent directly since this viewport
+        // owns the session itself rather than going through the bus.
+        const command = initialCommandRef.current;
+        if (command) void writeToPty(id, `${command}\r`);
+        if (registerWithBus) {
+          // Expose this session to Iris so it can run commands here. Registered
+          // through the module-level bus (not React state) so the command bar
+          // never re-renders this memoized panel.
+          terminalBus.set({
+            sessionId: id,
+            run: (cmd) => void writeToPty(id, `${cmd}\r`),
+            write: (data) => void writeToPty(id, data),
+            focus: () => term.focus(),
+          });
+        }
       })
       .catch((error) => {
         term.write(

@@ -92,6 +92,11 @@ export function ThemeSwitcher({ className, align = "right" }: ThemeSwitcherProps
                     {engine.description}
                   </span>
                 </span>
+                <span
+                  className="rt-theme-swatch mt-1 shrink-0"
+                  style={{ backgroundColor: engine.accentColor }}
+                  aria-hidden="true"
+                />
               </button>
             );
           })}
