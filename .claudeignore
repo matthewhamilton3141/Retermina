@@ -1,0 +1,15 @@
+# Build and Dependencies
+node_modules/
+target/
+dist/
+build/
+.git/
+
+# Logs and Temp
+*.log
+.DS_Store
+.tmp
+
+# Configuration
+.vscode/
+.idea/
