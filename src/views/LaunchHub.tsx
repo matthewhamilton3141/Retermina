@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+
 import Icon from "../components/Icon";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import LaunchActionCard, {
@@ -6,20 +8,100 @@ import LaunchActionCard, {
 import RecentWorkspacesPanel from "../components/launch/RecentWorkspacesPanel";
 import type { RecentWorkspace } from "../types";
 import { useAppStore } from "../store/app";
+import { createFile } from "../lib/fs";
+import { runBackgroundCommand } from "../lib/system";
+
+type PendingId = "new-file" | "open-folder" | "clone-repo";
+
+const PENDING_META: Record<
+  PendingId,
+  { icon: "newFile" | "openFolder" | "gitClone"; label: string; placeholder: string; hint: string }
+> = {
+  "new-file": {
+    icon: "newFile",
+    label: "New File",
+    placeholder: "/path/to/file.ts",
+    hint: "Absolute path — the file will be created and opened for editing.",
+  },
+  "open-folder": {
+    icon: "openFolder",
+    label: "Open Folder",
+    placeholder: "/path/to/project",
+    hint: "Absolute path to an existing directory.",
+  },
+  "clone-repo": {
+    icon: "gitClone",
+    label: "Clone Git Repository",
+    placeholder: "https://github.com/user/repo.git",
+    hint: "Clones into your home directory and opens the workspace.",
+  },
+};
 
 /**
  * The clean, distraction-free start screen shown before any terminal session
- * exists. Primary actions and recent-workspace selection are placeholders here
- * and get wired to the PTY workspace / dialogs in Step 3.
- *
- * The ThemeSwitcher lives in a sticky top bar (not absolutely positioned inside
- * a scrollable container) so:
- *   1. The dropdown is never clipped by overflow-y-auto.
- *   2. It mirrors the exact position used in TerminalWorkspace's toolbar,
- *      keeping the UI consistent across views.
+ * exists.
  */
 export function LaunchHub() {
   const openTerminal = useAppStore((state) => state.openTerminal);
+  const [pending, setPending] = useState<PendingId | null>(null);
+  const [input, setInput] = useState("");
+  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [running, setRunning] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function selectAction(id: PendingId) {
+    setPending(id);
+    setInput("");
+    setStatus(null);
+    setRunning(false);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function cancel() {
+    setPending(null);
+    setInput("");
+    setStatus(null);
+    setRunning(false);
+  }
+
+  async function submit() {
+    const val = input.trim();
+    if (!val || running) return;
+    setRunning(true);
+    setStatus(null);
+
+    try {
+      if (pending === "open-folder") {
+        openTerminal(val);
+        return;
+      }
+
+      if (pending === "new-file") {
+        await createFile(val);
+        const dir = val.includes("/") ? val.split("/").slice(0, -1).join("/") || "/" : ".";
+        openTerminal(dir);
+        return;
+      }
+
+      if (pending === "clone-repo") {
+        const result = await runBackgroundCommand(`git clone ${val}`, null);
+        if (result.code === 0) {
+          // Derive the cloned directory name from the URL
+          const parts = val.replace(/\.git$/, "").split("/");
+          const repoName = parts[parts.length - 1] ?? "repo";
+          const home = (await runBackgroundCommand("echo $HOME", null)).stdout.trim();
+          openTerminal(`${home}/${repoName}`);
+        } else {
+          setStatus({ ok: false, msg: result.stderr.trim() || "Clone failed." });
+          setRunning(false);
+        }
+        return;
+      }
+    } catch (e) {
+      setStatus({ ok: false, msg: String(e) });
+      setRunning(false);
+    }
+  }
 
   const actions: LaunchAction[] = [
     {
@@ -34,21 +116,21 @@ export function LaunchHub() {
       icon: "newFile",
       label: "New File",
       description: "Create and edit a new file",
-      onSelect: () => console.info("[launch] new file"),
+      onSelect: () => selectAction("new-file"),
     },
     {
       id: "open-folder",
       icon: "openFolder",
       label: "Open Folder",
       description: "Open an existing project",
-      onSelect: () => console.info("[launch] open folder"),
+      onSelect: () => selectAction("open-folder"),
     },
     {
       id: "clone-repo",
       icon: "gitClone",
       label: "Clone Git Repository",
       description: "Clone from a remote URL",
-      onSelect: () => console.info("[launch] clone repository"),
+      onSelect: () => selectAction("clone-repo"),
     },
   ];
 
@@ -56,32 +138,18 @@ export function LaunchHub() {
     openTerminal(workspace.path);
   };
 
+  const meta = pending ? PENDING_META[pending] : null;
+
   return (
-    // rt-app drives the per-theme background / foreground tokens.
-    // flex-col + h-screen keeps the sticky header at the top while the body
-    // scrolls independently beneath it.
-    <div className="rt-app flex h-screen flex-col">
-      {/*
-       * Sticky top bar — matches the same rt-toolbar / px-3 py-2 rhythm used
-       * in TerminalWorkspace so the ThemeSwitcher button sits in the same
-       * visual slot regardless of which view is active.
-       */}
+    <div className="flex h-full flex-col">
       <header className="rt-toolbar flex items-center gap-2 px-3 py-2">
-        {/* Left: branding mark */}
         <Icon name="terminal" size={15} className="rt-accent-text shrink-0" />
         <span className="text-sm font-medium">Retermina</span>
-
-        {/* Right: theme switcher — align="right" opens the menu leftward */}
         <div className="ml-auto">
           <ThemeSwitcher align="right" />
         </div>
       </header>
 
-      {/*
-       * Scrollable body. overflow-y-auto is on this inner div, NOT on the
-       * outer wrapper, so the sticky header (and its dropdown) are never
-       * clipped.
-       */}
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-12 px-6 py-16">
           <header className="flex flex-col items-center gap-3 text-center">
@@ -103,6 +171,50 @@ export function LaunchHub() {
                 <LaunchActionCard key={action.id} action={action} />
               ))}
             </div>
+
+            {/* Inline action form — appears below cards when an action is pending */}
+            {pending && meta && (
+              <div className="rt-surface mt-4 flex flex-col gap-3 rounded-xl p-4">
+                <div className="flex items-center gap-2">
+                  <Icon name={meta.icon} size={15} className="rt-accent-text shrink-0" />
+                  <span className="text-sm font-medium">{meta.label}</span>
+                  <button
+                    type="button"
+                    onClick={cancel}
+                    className="rt-btn ml-auto flex h-6 w-6 items-center justify-center"
+                    aria-label="Cancel"
+                  >
+                    <Icon name="close" size={13} />
+                  </button>
+                </div>
+                <p className="rt-text-faint text-xs">{meta.hint}</p>
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submit();
+                    if (e.key === "Escape") cancel();
+                  }}
+                  placeholder={meta.placeholder}
+                  disabled={running}
+                  className="rt-input w-full px-3 py-2 text-sm"
+                />
+                {status && (
+                  <p className={`text-xs ${status.ok ? "rt-text-muted" : "text-red-500"}`}>
+                    {status.msg}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={!input.trim() || running}
+                  className="rt-btn-outline self-end px-4 py-1.5 text-sm font-medium disabled:opacity-40"
+                >
+                  {running ? "Working…" : "Go"}
+                </button>
+              </div>
+            )}
           </section>
 
           <RecentWorkspacesPanel onOpen={openWorkspace} />

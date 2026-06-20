@@ -27,7 +27,8 @@ pub fn run() {
             iris::git_status,
             iris::run_background_command,
             fs::list_dir,
-            fs::read_file
+            fs::read_file,
+            fs::create_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -52,6 +52,18 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     Ok(entries)
 }
 
+/// Create a new empty file at `path`. Fails if the file already exists or the
+/// parent directory is not accessible.
+#[tauri::command]
+pub fn create_file(path: String) -> Result<(), String> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map(|_| ())
+        .map_err(|e| format!("Cannot create file: {e}"))
+}
+
 /// Read a UTF-8 text file. Returns an error for binary files, missing files,
 /// or files exceeding the 5 MB cap.
 #[tauri::command]

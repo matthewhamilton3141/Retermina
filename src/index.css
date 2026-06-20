@@ -93,53 +93,54 @@
   --rt-resize-handle: rgba(139, 92, 246, 0.5);
 }
 
-/* Transparent Glass — frosted app background, fully solid panels. */
+/* Transparent Glass — frosted panels over a blurred app background. */
 [data-theme="glass"] {
   color-scheme: light;
 
-  /* Semi-transparent background; backdrop-filter on .rt-app provides the blur.
-   * bg-image is dropped — the frosted effect replaces the gradient entirely. */
-  --rt-bg: rgba(255, 255, 255, 0.7);
+  /* App shell background: semi-transparent so desktop shows through.
+   * Tauri window needs transparent:true for this to reach the desktop;
+   * without it, the bg color is what's blurred, which still looks glassy. */
+  --rt-bg: rgba(210, 215, 225, 0.55);
   --rt-bg-image: none;
-  /* Panels are fully opaque so text stays readable against the blurred bg. */
-  --rt-surface: #f8f9fa;
-  --rt-surface-strong: #ffffff;
-  --rt-surface-hover: rgba(0, 0, 0, 0.05);
-  --rt-subsurface: #f2f3f4;
 
-  --rt-border: rgba(120, 124, 132, 0.25);
+  /* Panels: frosted-glass — semi-transparent white so blurred bg shows through. */
+  --rt-surface: rgba(255, 255, 255, 0.58);
+  --rt-surface-strong: rgba(255, 255, 255, 0.72);
+  --rt-surface-hover: rgba(0, 0, 0, 0.06);
+  --rt-subsurface: rgba(240, 242, 246, 0.5);
+
+  --rt-border: rgba(120, 124, 132, 0.2);
   --rt-border-width: 1px;
 
   --rt-text: #2a2c30;
   --rt-text-muted: #6b6e75;
   --rt-text-faint: #9a9ca3;
 
-  --rt-accent: #5b5f68;
-  --rt-accent-soft: rgba(91, 95, 104, 0.12);
+  --rt-accent: #4a6fa5;
+  --rt-accent-soft: rgba(74, 111, 165, 0.14);
 
   --rt-radius-sm: 0.6rem;
   --rt-radius: 0.9rem;
   --rt-radius-lg: 1.25rem;
 
-  --rt-shadow-panel: 0 8px 32px -6px rgba(0, 0, 0, 0.18);
+  --rt-shadow-panel: 0 8px 32px -6px rgba(0, 0, 0, 0.14),
+                     0 2px 8px -2px rgba(0, 0, 0, 0.08);
   --rt-btn-shadow: none;
-  /* No per-surface blur — panels/toolbars/menus are all solid. */
-  --rt-backdrop: none;
-  --rt-ring: rgba(91, 95, 104, 0.45);
+  /* Every surface blurs what's behind it. */
+  --rt-backdrop: blur(16px) saturate(160%);
+  --rt-ring: rgba(74, 111, 165, 0.45);
 
   --rt-icon-stroke: 1.75;
 
-  --rt-terminal-bg: #f2f3f4;
-  --rt-grid-placeholder: #8a8d94;
-  --rt-resize-handle: rgba(120, 124, 132, 0.6);
+  --rt-terminal-bg: rgba(245, 247, 250, 0.8);
+  --rt-grid-placeholder: #4a6fa5;
+  --rt-resize-handle: rgba(120, 124, 132, 0.5);
 }
 
-/* Apply the glass effect exclusively to the app shell background.
- * Every element that sits on top of .rt-app (panels, toolbar, IrisBar)
- * uses --rt-backdrop: none above, so they remain solid. */
+/* App shell: heavy blur behind the whole UI. */
 [data-theme="glass"] .rt-app {
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
 }
 
 /* Minimalist — flat, shadowless, hairline borders, near-monochrome on white. */
@@ -500,6 +501,18 @@ body {
  * handle in favor of the built-in corner chevron and drive the chevron and drag
  * placeholder colors from the active engine's tokens.
  */
+
+/* Dim the dragged/resized panel so the ghost placeholder is clearly visible
+ * behind it. No transition on the item itself — RGL re-positions items via
+ * inline transform on every onLayoutChange, and a CSS transition on transform
+ * would fight react-draggable's cursor tracking (panel lags cursor → feels
+ * broken). The ghost placeholder provides all the needed visual feedback. */
+.retermina-grid .react-grid-item.react-draggable-dragging,
+.retermina-grid .react-grid-item.resizing {
+  opacity: 0.72;
+  z-index: 100;
+}
+
 .retermina-grid .react-resizable-handle {
   background-image: none;
   /* Explicit stacking/hit-testing: the handle is injected as the last child
@@ -511,16 +524,58 @@ body {
   pointer-events: auto;
 }
 
+/* SE/E/S corner chevron — existing visual indicator. */
 .retermina-grid .react-grid-item > .react-resizable-handle::after {
   border-right-color: var(--rt-resize-handle);
   border-bottom-color: var(--rt-resize-handle);
 }
 
+/* Wireframe ghost instead of a filled drop zone. Using accent color as the
+ * dashed border makes the drop target legible on every theme engine. */
 .retermina-grid .react-grid-item.react-grid-placeholder {
-  background: var(--rt-grid-placeholder);
+  background: var(--rt-accent-soft);
+  border: 2px dashed var(--rt-accent);
   border-radius: var(--rt-radius-lg);
-  opacity: 0.18;
+  opacity: 0.6;
+  box-shadow: none;
 }
+
+/* Side/bottom cursors */
+.retermina-grid .react-resizable-handle-w  { cursor: ew-resize; }
+.retermina-grid .react-resizable-handle-sw { cursor: sw-resize; }
+
+/* N-family handles: clamped to a 5 px strip so the drag-handle title bar
+ * (~28 px tall) stays fully draggable. Only the very top edge triggers
+ * north resize; everything below it hits the panel header for drag. */
+.retermina-grid .react-resizable-handle-n  { height: 5px !important; cursor: n-resize; }
+.retermina-grid .react-resizable-handle-nw { height: 5px !important; width: 5px !important; cursor: nw-resize; }
+.retermina-grid .react-resizable-handle-ne { height: 5px !important; width: 5px !important; cursor: ne-resize; }
+
+/* Custom title bar (shown when decorations: false removes the OS chrome). */
+.rt-titlebar {
+  background-color: var(--rt-surface-strong);
+  border-bottom: var(--rt-border-width) solid var(--rt-border);
+  -webkit-backdrop-filter: var(--rt-backdrop);
+  backdrop-filter: var(--rt-backdrop);
+}
+
+/* macOS-style traffic light buttons. */
+.rt-tl {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rt-tl-close { background-color: #ff5f57; }
+.rt-tl-min   { background-color: #febc2e; }
+.rt-tl-max   { background-color: #28c840; }
+
+.rt-tl:hover  { filter: brightness(0.82); }
+.rt-tl:active { filter: brightness(0.68); }
 
 /* Small accent-color preview dot used by the theme switcher's engine list. */
 .rt-theme-swatch {

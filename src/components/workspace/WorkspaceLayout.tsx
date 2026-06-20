@@ -135,11 +135,9 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
             enabled: true,
             handle: ".panel-drag-handle",
             cancel: ".panel-no-drag",
-            // Keep dragged panels within the visible grid so they can't be
-            // moved somewhere the user can no longer see or reach them.
             bounded: true,
           }}
-          resizeConfig={{ enabled: true, handles: ["se", "e", "s"] }}
+          resizeConfig={{ enabled: true, handles: ["n", "ne", "nw", "se", "s", "e", "w", "sw"] }}
         >
           {children}
         </GridLayout>

@@ -1,5 +1,6 @@
 import Icon from "../components/Icon";
 import ThemeSwitcher from "../components/ThemeSwitcher";
+import CommandMenu from "../components/workspace/CommandMenu";
 import IrisBar from "../components/workspace/IrisBar";
 import WorkspaceLayout from "../components/workspace/WorkspaceLayout";
 import { prettyPath } from "../lib/format";
@@ -26,7 +27,7 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
   const visibleKinds = new Set(panels.map((panel) => panel.kind));
 
   return (
-    <div className="rt-app flex h-screen flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden">
       <header className="rt-toolbar relative z-50 flex items-center gap-2 px-3 py-2">
         <button
           type="button"
@@ -71,6 +72,8 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
             <Icon name="sync" size={14} />
             <span className="hidden sm:inline">Reset</span>
           </button>
+          <div className="rt-divider mx-1 h-5 w-px" />
+          <CommandMenu cwd={cwd} />
           <div className="rt-divider mx-1 h-5 w-px" />
           <ThemeSwitcher align="right" />
         </div>

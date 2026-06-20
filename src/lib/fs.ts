@@ -22,3 +22,11 @@ export async function listDir(path: string): Promise<DirEntry[]> {
 export async function readFile(path: string): Promise<string> {
   return invoke<string>("read_file", { path });
 }
+
+/**
+ * Create a new empty file at `path`. Rejects if the file already exists or
+ * the parent directory is inaccessible.
+ */
+export async function createFile(path: string): Promise<void> {
+  return invoke<void>("create_file", { path });
+}
