@@ -225,20 +225,24 @@ body,
   height: 100%;
 }
 
-/* Clip to rounded corners on the transparent window, and paint a solid
- * background on html itself so that during resize the newly-exposed WebView
- * area never flashes black before React repaints. body/rt-app layer their own
- * theme backgrounds on top; this is just the backstop. */
+/* Rounded transparent window.
+ *
+ * html is the outermost paint surface. It gets the rounded clip AND the
+ * backstop background so resize flashes never show black. body is set to
+ * transparent so it doesn't paint a solid rectangle over html's corners —
+ * those corner pixels stay transparent and the desktop shows through.
+ * .rt-app (inside body) carries the real theme background and is also
+ * clipped to the same radius by html's overflow:hidden. */
 html {
   background-color: var(--rt-bg);
-  border-radius: 0.75rem;
+  border-radius: 12px;
   overflow: hidden;
 }
 
 body {
   margin: 0;
-  background-color: var(--rt-bg);
-  background-image: var(--rt-bg-image);
+  background-color: transparent;
+  background-image: none;
   color: var(--rt-text);
   font-family: var(--rt-font-sans);
   -webkit-font-smoothing: antialiased;
@@ -257,6 +261,11 @@ body {
   background-color: var(--rt-bg);
   background-image: var(--rt-bg-image);
   color: var(--rt-text);
+  /* Match html's clip radius so the theme background itself is visually
+   * rounded, and add a native-feeling drop shadow for the window chrome. */
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
   font-family: var(--rt-font-sans);
 }
 
