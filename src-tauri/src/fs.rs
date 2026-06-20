@@ -1,0 +1,68 @@
+//! File-system commands for the Explorer and Code View panels.
+//!
+//! `list_dir` returns the immediate children of a directory (sorted, hidden
+//! files excluded). `read_file` reads a UTF-8 text file — binary files or
+//! files over the size cap return an error, which the frontend surfaces inline.
+
+use serde::Serialize;
+
+/// A single directory entry returned by [`list_dir`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+}
+
+/// Maximum file size (bytes) [`read_file`] will read into memory.
+const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024; // 5 MB
+
+/// List the immediate children of `path`.
+///
+/// Hidden entries (names starting with `.`) are excluded. The result is sorted
+/// with directories first, then files, both groups case-insensitively
+/// alphabetical.
+#[tauri::command]
+pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+    let mut entries: Vec<DirEntry> = std::fs::read_dir(&path)
+        .map_err(|e| format!("Cannot read directory: {e}"))?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .map(|name| !name.starts_with('.'))
+                .unwrap_or(false)
+        })
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_string();
+            let path = entry.path().to_str()?.to_string();
+            let is_dir = entry.file_type().ok()?.is_dir();
+            Some(DirEntry { name, path, is_dir })
+        })
+        .collect();
+
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
+/// Read a UTF-8 text file. Returns an error for binary files, missing files,
+/// or files exceeding the 5 MB cap.
+#[tauri::command]
+pub fn read_file(path: String) -> Result<String, String> {
+    let metadata =
+        std::fs::metadata(&path).map_err(|e| format!("Cannot stat file: {e}"))?;
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(format!(
+            "File is too large to display ({} MB — limit is 5 MB).",
+            metadata.len() / 1024 / 1024
+        ));
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("Cannot read file: {e}"))
+}

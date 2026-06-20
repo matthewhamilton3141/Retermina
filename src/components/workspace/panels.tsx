@@ -1,8 +1,10 @@
 import { memo, type ReactNode } from "react";
 
 import Icon from "../Icon";
-import { prettyPath } from "../../lib/format";
+import { useEditorStore } from "../../store/editor";
 import type { PanelKind } from "../../lib/workspaceLayout";
+import FileExplorerPanel from "./FileExplorerPanel";
+import LivePreviewPanel from "./LivePreviewPanel";
 import LocalhostPanel from "./LocalhostPanel";
 import TerminalViewport from "./TerminalViewport";
 
@@ -16,11 +18,6 @@ export interface PanelRenderContext {
 /* Terminal                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Hosts the live terminal. Memoized so the frequent re-renders that happen
- * while dragging/resizing other panels never reach the xterm subtree (which
- * would otherwise risk tearing down its PTY binding).
- */
 const TerminalPanel = memo(function TerminalPanel({
   cwd,
 }: {
@@ -34,46 +31,58 @@ const TerminalPanel = memo(function TerminalPanel({
 });
 
 /* -------------------------------------------------------------------------- */
-/* File Explorer (placeholder until the editor integration lands)             */
+/* Code View                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function FileExplorerPanel({ cwd }: { cwd: string | null }) {
-  const root = cwd ? prettyPath(cwd) : "No folder open";
+function CodeViewPanel() {
+  const selectedPath = useEditorStore((s) => s.selectedPath);
+  const content = useEditorStore((s) => s.content);
+  const loading = useEditorStore((s) => s.loading);
+  const error = useEditorStore((s) => s.error);
+  const close = useEditorStore((s) => s.close);
+
+  const fileName = selectedPath ? selectedPath.split("/").pop() : null;
+
   return (
     <div className="rt-subsurface flex h-full w-full flex-col">
-      <div className="rt-divider-b rt-text-muted flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
-        <Icon name="folder" size={13} className="rt-accent-text shrink-0" />
-        <span className="truncate" title={cwd ?? undefined}>
-          {root}
-        </span>
-      </div>
-      <div className="flex flex-1 items-center justify-center px-4 text-center">
-        <p className="rt-text-muted text-xs leading-relaxed">
-          The file tree arrives with the editor integration. For now, use the
-          terminal to navigate the project.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Code View (placeholder until the editor integration lands)                 */
-/* -------------------------------------------------------------------------- */
-
-function CodeViewPanel({ cwd }: { cwd: string | null }) {
-  return (
-    <div className="rt-subsurface flex h-full w-full flex-col">
-      <div className="rt-divider-b rt-text-muted flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
+      <div className="rt-divider-b flex shrink-0 items-center gap-1.5 px-2.5 py-1.5">
         <Icon name="code" size={13} className="rt-accent-text shrink-0" />
-        <span className="truncate">Code</span>
+        <span className="rt-text-muted min-w-0 flex-1 truncate text-xs font-medium">
+          {fileName ?? "No file open"}
+        </span>
+        {selectedPath && (
+          <button
+            type="button"
+            onClick={close}
+            title="Close file"
+            className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
+          >
+            <Icon name="close" size={11} aria-label="Close file" />
+          </button>
+        )}
       </div>
-      <div className="flex flex-1 items-center justify-center px-4 text-center">
-        <p className="rt-text-muted text-xs leading-relaxed">
-          {cwd
-            ? "A read-only code viewer for this workspace arrives with the editor integration. For now, use the terminal to view files."
-            : "Open a folder to view its files here once the editor integration lands."}
-        </p>
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        {!selectedPath ? (
+          <div className="flex h-full items-center justify-center px-4 text-center">
+            <p className="rt-text-muted text-xs leading-relaxed">
+              Click a file in the Explorer to open it here.
+            </p>
+          </div>
+        ) : loading ? (
+          <div className="flex h-full items-center justify-center gap-2">
+            <Icon name="sync" size={14} className="rt-text-faint animate-spin" />
+            <span className="rt-text-faint text-xs">Loading…</span>
+          </div>
+        ) : error ? (
+          <div className="px-3 py-2">
+            <p className="rt-text-muted text-[11px] leading-snug">{error}</p>
+          </div>
+        ) : (
+          <pre className="h-full w-full overflow-auto p-3 font-mono text-[12px] leading-relaxed whitespace-pre">
+            {content}
+          </pre>
+        )}
       </div>
     </div>
   );
@@ -83,19 +92,6 @@ function CodeViewPanel({ cwd }: { cwd: string | null }) {
 /* Claude Code                                                                */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Hosts a dedicated terminal session for the `claude` CLI, auto-started the
- * moment its PTY connects. Memoized for the same reason as TerminalPanel: it
- * owns a live PTY session that must survive unrelated re-renders (drag,
- * resize, theme changes) without tearing down.
- *
- * `registerWithBus={false}` is the important bit — without it, this panel
- * would compete with the regular Terminal panel for Iris's single
- * active-terminal slot, and a command typed into Iris could end up routed
- * into the `claude` session instead of the user's actual shell depending on
- * which panel happened to connect or focus most recently. Iris should always
- * reach the user's shell; this pane is a separate, self-contained session.
- */
 const ClaudeCodePanel = memo(function ClaudeCodePanel({
   cwd,
 }: {
@@ -124,7 +120,8 @@ export const PANEL_RENDERERS: Record<
 > = {
   terminal: ({ cwd }) => <TerminalPanel cwd={cwd} />,
   fileExplorer: ({ cwd }) => <FileExplorerPanel cwd={cwd} />,
-  codeView: ({ cwd }) => <CodeViewPanel cwd={cwd} />,
+  codeView: () => <CodeViewPanel />,
   localhost: () => <LocalhostPanel />,
   claudeCode: ({ cwd }) => <ClaudeCodePanel cwd={cwd} />,
+  livePreview: () => <LivePreviewPanel />,
 };

@@ -1,3 +1,4 @@
+mod fs;
 mod iris;
 mod localhost;
 mod pty;
@@ -24,7 +25,9 @@ pub fn run() {
             localhost::list_listening_ports,
             localhost::kill_process,
             iris::git_status,
-            iris::run_background_command
+            iris::run_background_command,
+            fs::list_dir,
+            fs::read_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

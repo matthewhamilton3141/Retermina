@@ -17,7 +17,7 @@
   --rt-bg: #0a0a0a;
   --rt-bg-image: none;
   --rt-surface: rgba(23, 23, 23, 0.6);
-  --rt-surface-strong: rgba(23, 23, 23, 0.85);
+  --rt-surface-strong: #171717;
   --rt-surface-hover: #262626;
   --rt-subsurface: rgba(10, 10, 10, 0.4);
 
@@ -93,23 +93,19 @@
   --rt-resize-handle: rgba(139, 92, 246, 0.5);
 }
 
-/* Transparent Glass — frosted translucent panels over a deep gradient. */
+/* Transparent Glass — frosted app background, fully solid panels. */
 [data-theme="glass"] {
   color-scheme: light;
 
-  /* Neutral frosted glass: soft grey/white surfaces, no blue or purple tint. */
-  --rt-bg: #e9eaec;
-  --rt-bg-image: radial-gradient(
-      circle at 15% 10%,
-      rgba(255, 255, 255, 0.65),
-      transparent 40%
-    ),
-    radial-gradient(circle at 85% 0%, rgba(0, 0, 0, 0.04), transparent 45%),
-    linear-gradient(160deg, #eceef0, #dadde1);
-  --rt-surface: rgba(255, 255, 255, 0.45);
-  --rt-surface-strong: rgba(255, 255, 255, 0.65);
+  /* Semi-transparent background; backdrop-filter on .rt-app provides the blur.
+   * bg-image is dropped — the frosted effect replaces the gradient entirely. */
+  --rt-bg: rgba(255, 255, 255, 0.7);
+  --rt-bg-image: none;
+  /* Panels are fully opaque so text stays readable against the blurred bg. */
+  --rt-surface: #f8f9fa;
+  --rt-surface-strong: #ffffff;
   --rt-surface-hover: rgba(0, 0, 0, 0.05);
-  --rt-subsurface: rgba(255, 255, 255, 0.3);
+  --rt-subsurface: #f2f3f4;
 
   --rt-border: rgba(120, 124, 132, 0.25);
   --rt-border-width: 1px;
@@ -127,7 +123,8 @@
 
   --rt-shadow-panel: 0 8px 32px -6px rgba(0, 0, 0, 0.18);
   --rt-btn-shadow: none;
-  --rt-backdrop: blur(14px) saturate(140%);
+  /* No per-surface blur — panels/toolbars/menus are all solid. */
+  --rt-backdrop: none;
   --rt-ring: rgba(91, 95, 104, 0.45);
 
   --rt-icon-stroke: 1.75;
@@ -135,6 +132,14 @@
   --rt-terminal-bg: #f2f3f4;
   --rt-grid-placeholder: #8a8d94;
   --rt-resize-handle: rgba(120, 124, 132, 0.6);
+}
+
+/* Apply the glass effect exclusively to the app shell background.
+ * Every element that sits on top of .rt-app (panels, toolbar, IrisBar)
+ * uses --rt-backdrop: none above, so they remain solid. */
+[data-theme="glass"] .rt-app {
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
 }
 
 /* Minimalist — flat, shadowless, hairline borders, near-monochrome on white. */

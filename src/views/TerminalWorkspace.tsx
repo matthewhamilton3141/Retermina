@@ -26,8 +26,8 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
   const visibleKinds = new Set(panels.map((panel) => panel.kind));
 
   return (
-    <div className="rt-app flex h-screen flex-col">
-      <header className="rt-toolbar flex items-center gap-2 px-3 py-2">
+    <div className="rt-app flex h-screen flex-col overflow-hidden">
+      <header className="rt-toolbar relative z-50 flex items-center gap-2 px-3 py-2">
         <button
           type="button"
           onClick={onLeave}

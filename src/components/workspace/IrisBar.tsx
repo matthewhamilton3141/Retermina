@@ -204,7 +204,7 @@ export function IrisBar({ cwd }: IrisBarProps) {
           <div
             role="listbox"
             aria-label="Iris suggestions"
-            className="rt-menu absolute right-0 bottom-full left-0 z-20 mb-2 max-h-72 overflow-y-auto p-1"
+            className="rt-menu absolute right-0 bottom-full left-0 z-50 mb-2 max-h-72 overflow-y-auto p-1"
           >
             {suggestions.map((suggestion, index) => (
               <button

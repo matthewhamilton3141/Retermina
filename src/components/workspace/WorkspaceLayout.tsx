@@ -106,7 +106,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
   );
 
   return (
-    <div ref={ref} className="h-full w-full overflow-auto">
+    <div ref={ref} className="h-full w-full overflow-hidden">
       {!mounted ? null : panels.length === 0 ? (
         <div className="flex h-full w-full items-center justify-center px-6 text-center">
           <p className="rt-text-muted text-sm">

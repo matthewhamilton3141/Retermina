@@ -71,7 +71,13 @@ fn default_shell() -> CommandBuilder {
         CommandBuilder::new("powershell.exe")
     } else {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-        CommandBuilder::new(shell)
+        let mut cmd = CommandBuilder::new(&shell);
+        // -l (login shell) causes the shell to source /etc/profile and
+        // ~/.zprofile / ~/.bash_profile on startup. Without this, Tauri's GUI
+        // process inherits a bare launchd PATH (/usr/bin:/bin only), so npm,
+        // git, brew-installed tools, and nvm/rbenv/pyenv shims are all missing.
+        cmd.arg("-l");
+        cmd
     }
 }
 

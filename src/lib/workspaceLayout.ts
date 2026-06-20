@@ -17,7 +17,8 @@ export type PanelKind =
   | "fileExplorer"
   | "localhost"
   | "codeView"
-  | "claudeCode";
+  | "claudeCode"
+  | "livePreview";
 
 /** Every supported panel kind, in default display order. */
 export const PANEL_KINDS: readonly PanelKind[] = [
@@ -26,6 +27,7 @@ export const PANEL_KINDS: readonly PanelKind[] = [
   "codeView",
   "localhost",
   "claudeCode",
+  "livePreview",
 ];
 
 /** A visible panel instance. `id` doubles as the grid item key. */
@@ -88,6 +90,7 @@ export const PANEL_IDS: Record<PanelKind, string> = {
   localhost: "localhost",
   codeView: "code-view",
   claudeCode: "claude-code",
+  livePreview: "live-preview",
 };
 
 /** Icon + label for each panel kind. Single source of truth for chrome text. */
@@ -97,6 +100,7 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
   localhost: { icon: "localhost", label: "Localhost" },
   codeView: { icon: "code", label: "Code" },
   claudeCode: { icon: "bot", label: "Claude Code" },
+  livePreview: { icon: "preview", label: "Preview" },
 };
 
 /**
@@ -128,6 +132,8 @@ export const DEFAULT_PANEL_SIZE: Record<
   // overlap fallback at first; the user drags it into place once, same as
   // adding any other panel beyond the default four.
   claudeCode:  { w: 4, h: 4, minW: 3, minH: 2 },
+  // Live Preview needs reasonable height for the iframe to show content.
+  livePreview: { w: 6, h: 6, minW: 3, minH: 3 },
 };
 
 /**

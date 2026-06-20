@@ -63,7 +63,7 @@ export function ThemeSwitcher({ className, align = "right" }: ThemeSwitcherProps
         <div
           role="menu"
           aria-label="Theme engine"
-          className={`rt-menu absolute z-20 mt-2 w-60 p-1 ${
+          className={`rt-menu absolute z-50 mt-2 w-60 p-1 ${
             align === "right" ? "right-0" : "left-0"
           }`}
         >
