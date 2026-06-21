@@ -26,6 +26,22 @@ export interface IrisCtx extends GitStatus {
   selectedPath: string | null;
 }
 
+/**
+ * Inline argument prompt shown when a macro needs user input before it can run
+ * (e.g. branch name for checkout, URL for clone, script name for npm run).
+ */
+export interface IrisPrompt {
+  /** Short label displayed above the input field. */
+  label: string;
+  /** Input placeholder text. */
+  placeholder: string;
+  /**
+   * Build the final shell command from the user's typed argument.
+   * The ctx is already baked in at suggestion-build time.
+   */
+  build: (arg: string) => string;
+}
+
 /** A ready-to-present suggestion (a macro resolved against the live context). */
 export interface IrisSuggestion {
   id: string;
@@ -36,8 +52,13 @@ export interface IrisSuggestion {
   group: string;
   /** Preferred run target; the bar falls back to background if no terminal. */
   run: IrisRunTarget;
-  /** The concrete shell command line to execute. */
+  /** The concrete shell command line to execute (empty for prompt macros). */
   command: string;
+  /**
+   * If set, selecting this suggestion opens an inline argument prompt instead
+   * of running immediately. The final command is built once the user submits.
+   */
+  prompt?: IrisPrompt;
 }
 
 /** A catalog entry: a command macro plus its matching/gating metadata. */
@@ -56,8 +77,20 @@ interface MacroDef {
   hidden?: boolean;
   /** Context guard: only offered when this returns true. */
   available: (ctx: IrisCtx) => boolean;
-  /** Build the command line, possibly using the live context. */
+  /**
+   * Build the command. For simple macros this ignores the context; for
+   * prompt-based macros this field is unused (prompt.build is used instead).
+   */
   command: (ctx: IrisCtx) => string;
+  /**
+   * If set, the macro requires a user-supplied argument before it can run.
+   * `build` receives the argument and the live ctx, returns the command string.
+   */
+  prompt?: {
+    label: string;
+    placeholder: string;
+    build: (arg: string, ctx: IrisCtx) => string;
+  };
 }
 
 /**
@@ -164,6 +197,76 @@ const MACROS: readonly MacroDef[] = [
     priority: 60,
     available: (c) => c.isRepo && c.unstaged + c.untracked + c.conflicts > 0,
     command: () => "git add -A",
+  },
+
+  /* ----------------------- Git: branch management ------------------------- */
+  {
+    id: "git-checkout",
+    title: "Checkout branch",
+    description: "Switch to an existing local or remote branch.",
+    icon: "gitClone",
+    group: "Git",
+    run: "terminal",
+    keywords: ["checkout", "switch", "change branch", "git checkout"],
+    priority: 68,
+    available: (c) => c.isRepo,
+    command: () => "",
+    prompt: {
+      label: "Branch name",
+      placeholder: "main",
+      build: (arg) => `git checkout ${arg}`,
+    },
+  },
+  {
+    id: "git-new-branch",
+    title: "New branch",
+    description: "Create and switch to a new branch.",
+    icon: "gitClone",
+    group: "Git",
+    run: "terminal",
+    keywords: ["new branch", "create branch", "checkout -b", "feature branch"],
+    priority: 66,
+    available: (c) => c.isRepo,
+    command: () => "",
+    prompt: {
+      label: "New branch name",
+      placeholder: "feature/my-feature",
+      build: (arg) => `git checkout -b ${arg}`,
+    },
+  },
+  {
+    id: "git-merge",
+    title: "Merge branch",
+    description: "Merge a branch into the current one.",
+    icon: "sync",
+    group: "Git",
+    run: "terminal",
+    keywords: ["merge", "git merge", "combine branch"],
+    priority: 44,
+    available: (c) => c.isRepo,
+    command: () => "",
+    prompt: {
+      label: "Branch to merge",
+      placeholder: "main",
+      build: (arg) => `git merge ${arg}`,
+    },
+  },
+  {
+    id: "git-tag",
+    title: "Create tag",
+    description: "Tag the current commit.",
+    icon: "gitClone",
+    group: "Git",
+    run: "terminal",
+    keywords: ["tag", "create tag", "release", "version"],
+    priority: 20,
+    available: (c) => c.isRepo,
+    command: () => "",
+    prompt: {
+      label: "Tag name",
+      placeholder: "v1.0.0",
+      build: (arg) => `git tag ${arg}`,
+    },
   },
 
   /* --------------------------- Git: inspecting ---------------------------- */
@@ -395,7 +498,42 @@ const MACROS: readonly MacroDef[] = [
     command: () => "npm run lint",
   },
 
+  {
+    id: "npm-run-script",
+    title: "Run script",
+    description: "Run any script defined in package.json.",
+    icon: "launch",
+    group: "npm",
+    run: "terminal",
+    keywords: ["run", "npm run", "script", "task"],
+    priority: 46,
+    available: () => true,
+    command: () => "",
+    prompt: {
+      label: "Script name",
+      placeholder: "test:watch",
+      build: (arg) => `npm run ${arg}`,
+    },
+  },
+
   /* ------------------------------- Shell ---------------------------------- */
+  {
+    id: "shell-mkdir",
+    title: "Make directory",
+    description: "Create a directory (including parent dirs).",
+    icon: "newFolder",
+    group: "Shell",
+    run: "terminal",
+    keywords: ["mkdir", "make dir", "create folder", "new folder"],
+    priority: 8,
+    available: () => true,
+    command: () => "",
+    prompt: {
+      label: "Directory path",
+      placeholder: "src/components/ui",
+      build: (arg) => `mkdir -p ${arg}`,
+    },
+  },
   {
     id: "shell-clear",
     title: "Clear terminal",
@@ -580,7 +718,15 @@ export function buildSuggestions(
     icon: macro.icon,
     group: macro.group,
     run: macro.run,
-    command: macro.command(ctx),
+    command: macro.prompt ? "" : macro.command(ctx),
+    // Bake the ctx into the prompt's build function so IrisBar doesn't need it.
+    prompt: macro.prompt
+      ? {
+          label:       macro.prompt.label,
+          placeholder: macro.prompt.placeholder,
+          build:       (arg: string) => macro.prompt!.build(arg, ctx),
+        }
+      : undefined,
   }));
 
   // Always let the raw query run as a literal command.

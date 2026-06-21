@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import Icon from "../Icon";
-import { buildSuggestions, type IrisCtx, type IrisSuggestion } from "../../lib/iris";
+import { buildSuggestions, type IrisCtx, type IrisSuggestion, type IrisPrompt } from "../../lib/iris";
 import {
   DEFAULT_GIT_STATUS,
   gitStatus,
@@ -73,6 +73,14 @@ export function IrisBar({ cwd }: IrisBarProps) {
     result: CommandResult;
   } | null>(null);
 
+  // Prompt mode — set when the user selects a macro that needs an argument.
+  const [promptState, setPromptState] = useState<{
+    suggestion: IrisSuggestion;
+    prompt: IrisPrompt;
+    arg: string;
+  } | null>(null);
+  const promptInputRef = useRef<HTMLInputElement | null>(null);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const irisCtx = useMemo<IrisCtx>(
@@ -100,24 +108,20 @@ export function IrisBar({ cwd }: IrisBarProps) {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
-  const runSuggestion = useCallback(
-    async (suggestion: IrisSuggestion) => {
-      const command = suggestion.command;
-
-      // Prefer the live terminal so output lands in the user's shell history.
+  const runCommand = useCallback(
+    async (suggestion: IrisSuggestion, command: string) => {
       if (suggestion.run === "terminal" && terminalBus.run(command)) {
         terminalBus.get()?.focus();
         setQuery("");
         setOpen(false);
-        // A Git macro can change ahead/behind/dirty — re-read shortly after.
+        setPromptState(null);
         window.setTimeout(() => refresh(), 700);
         return;
       }
-
-      // No terminal available (or explicitly background): capture the output.
       setRunning(command);
       setOutput(null);
       setOpen(false);
+      setPromptState(null);
       try {
         const result = await runBackgroundCommand(command, cwd);
         setOutput({ command, result });
@@ -134,6 +138,28 @@ export function IrisBar({ cwd }: IrisBarProps) {
     },
     [cwd, refresh],
   );
+
+  const runSuggestion = useCallback(
+    async (suggestion: IrisSuggestion) => {
+      // If the macro needs an argument, enter prompt mode instead of running.
+      if (suggestion.prompt) {
+        setOpen(false);
+        setPromptState({ suggestion, prompt: suggestion.prompt, arg: "" });
+        setTimeout(() => promptInputRef.current?.focus(), 0);
+        return;
+      }
+      await runCommand(suggestion, suggestion.command);
+    },
+    [runCommand],
+  );
+
+  const submitPrompt = useCallback(() => {
+    if (!promptState) return;
+    const arg = promptState.arg.trim();
+    if (!arg) return;
+    const command = promptState.prompt.build(arg);
+    void runCommand(promptState.suggestion, command);
+  }, [promptState, runCommand]);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -244,14 +270,66 @@ export function IrisBar({ cwd }: IrisBarProps) {
                     {suggestion.description}
                   </span>
                 </span>
-                <span className="rt-text-faint shrink-0 text-[10px] font-medium tracking-wide uppercase">
-                  {suggestion.group}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {suggestion.prompt && (
+                    <span className="rt-text-faint text-[10px]" title="Requires input">
+                      ✎
+                    </span>
+                  )}
+                  <span className="rt-text-faint text-[10px] font-medium tracking-wide uppercase">
+                    {suggestion.group}
+                  </span>
                 </span>
               </button>
             ))}
           </div>
         ) : null}
 
+        {/* ── Prompt mode ── */}
+        {promptState && (
+          <form
+            onSubmit={(e) => { e.preventDefault(); submitPrompt(); }}
+            className="flex items-center gap-2"
+          >
+            <button
+              type="button"
+              onClick={() => setPromptState(null)}
+              className="rt-btn flex h-7 w-7 shrink-0 items-center justify-center"
+              title="Cancel"
+            >
+              <Icon name="back" size={14} />
+            </button>
+            <span className="rt-text-muted shrink-0 text-xs font-medium">
+              {promptState.suggestion.title}
+            </span>
+            <input
+              ref={promptInputRef}
+              value={promptState.arg}
+              onChange={(e) =>
+                setPromptState((s) => s && { ...s, arg: e.target.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setPromptState(null);
+              }}
+              placeholder={promptState.prompt.placeholder}
+              spellCheck={false}
+              autoComplete="off"
+              aria-label={promptState.prompt.label}
+              className="rt-input min-w-0 flex-1 px-2.5 py-1.5 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={!promptState.arg.trim()}
+              className="rt-btn-outline flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium disabled:opacity-60"
+            >
+              <Icon name="launch" size={14} />
+              <span className="hidden sm:inline">Run</span>
+            </button>
+          </form>
+        )}
+
+        {/* ── Normal mode ── */}
+        {!promptState && (
         <form onSubmit={onSubmit} className="flex items-center gap-2">
           <Icon name="iris" size={16} className="rt-accent-text shrink-0" />
           <input
@@ -315,6 +393,7 @@ export function IrisBar({ cwd }: IrisBarProps) {
             <span className="hidden sm:inline">Run</span>
           </button>
         </form>
+        )} {/* end !promptState */}
       </div>
     </div>
   );
