@@ -17,6 +17,15 @@ import type { GitStatus } from "./system";
 /** Where a chosen suggestion runs. */
 export type IrisRunTarget = "terminal" | "background";
 
+/**
+ * Full context handed to every macro's `available` and `command` functions.
+ * Extends GitStatus so existing macros continue to work unchanged.
+ */
+export interface IrisCtx extends GitStatus {
+  /** Absolute path of the file currently open in the Code panel, or null. */
+  selectedPath: string | null;
+}
+
 /** A ready-to-present suggestion (a macro resolved against the live context). */
 export interface IrisSuggestion {
   id: string;
@@ -46,9 +55,9 @@ interface MacroDef {
   /** When true, only surfaces on an explicit keyword match (never by default). */
   hidden?: boolean;
   /** Context guard: only offered when this returns true. */
-  available: (ctx: GitStatus) => boolean;
+  available: (ctx: IrisCtx) => boolean;
   /** Build the command line, possibly using the live context. */
-  command: (ctx: GitStatus) => string;
+  command: (ctx: IrisCtx) => string;
 }
 
 /**
@@ -460,6 +469,44 @@ const MACROS: readonly MacroDef[] = [
     available: () => true,
     command: () => "ps aux | grep -E '[n]ode|[n]pm|[v]ite|[p]npm'",
   },
+
+  /* ----------------------------- File actions ----------------------------- */
+  {
+    id: "file-reveal-finder",
+    title: "Reveal in Finder",
+    description: "Open Finder and select the current file.",
+    icon: "folderOpen",
+    group: "File",
+    run: "background",
+    keywords: ["finder", "reveal", "show in finder", "open finder", "locate"],
+    priority: 20,
+    available: (ctx) => ctx.selectedPath !== null,
+    command: (ctx) => `open -R "${ctx.selectedPath}"`,
+  },
+  {
+    id: "file-open-default",
+    title: "Open file in default app",
+    description: "Open the current file with its default macOS application.",
+    icon: "launch",
+    group: "File",
+    run: "background",
+    keywords: ["open", "open file", "default app", "preview", "xcode"],
+    priority: 18,
+    available: (ctx) => ctx.selectedPath !== null,
+    command: (ctx) => `open "${ctx.selectedPath}"`,
+  },
+  {
+    id: "file-copy-path",
+    title: "Copy file path",
+    description: "Copy the absolute path of the current file to the clipboard.",
+    icon: "file",
+    group: "File",
+    run: "background",
+    keywords: ["copy path", "clipboard", "file path", "copy", "path"],
+    priority: 16,
+    available: (ctx) => ctx.selectedPath !== null,
+    command: (ctx) => `echo -n "${ctx.selectedPath}" | pbcopy`,
+  },
 ];
 
 /**
@@ -506,7 +553,7 @@ export interface BuildSuggestionsOptions {
  */
 export function buildSuggestions(
   query: string,
-  ctx: GitStatus,
+  ctx: IrisCtx,
   options: BuildSuggestionsOptions = {},
 ): IrisSuggestion[] {
   const trimmed = query.trim();

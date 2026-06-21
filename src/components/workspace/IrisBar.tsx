@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import Icon from "../Icon";
-import { buildSuggestions, type IrisSuggestion } from "../../lib/iris";
+import { buildSuggestions, type IrisCtx, type IrisSuggestion } from "../../lib/iris";
 import {
   DEFAULT_GIT_STATUS,
   gitStatus,
@@ -18,6 +18,7 @@ import {
   type GitStatus,
 } from "../../lib/system";
 import { terminalBus, useActiveTerminal } from "../../lib/terminalBus";
+import { useEditorStore } from "../../store/editor";
 
 export interface IrisBarProps {
   /** Working directory used for Git context and background commands. */
@@ -61,6 +62,7 @@ function commandOutput(result: CommandResult): string {
 export function IrisBar({ cwd }: IrisBarProps) {
   const { status, refresh } = useGitStatus(cwd);
   const activeTerminal = useActiveTerminal();
+  const selectedPath = useEditorStore((s) => s.selectedPath);
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -73,9 +75,14 @@ export function IrisBar({ cwd }: IrisBarProps) {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const irisCtx = useMemo<IrisCtx>(
+    () => ({ ...status, selectedPath }),
+    [status, selectedPath],
+  );
+
   const suggestions = useMemo(
-    () => buildSuggestions(query, status),
-    [query, status],
+    () => buildSuggestions(query, irisCtx),
+    [query, irisCtx],
   );
   const safeIndex = suggestions.length
     ? Math.min(activeIndex, suggestions.length - 1)
