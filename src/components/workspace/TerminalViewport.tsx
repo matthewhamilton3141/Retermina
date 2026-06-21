@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -12,6 +12,8 @@ import {
 } from "../../lib/pty";
 import { terminalBus } from "../../lib/terminalBus";
 import { useTheme } from "../../theme/ThemeProvider";
+import { useTauriFileDrop } from "../../hooks/useTauriFileDrop";
+import Icon from "../Icon";
 
 /** Decode a base64 chunk into bytes for xterm (which reassembles UTF-8). */
 function base64ToBytes(b64: string): Uint8Array {
@@ -55,6 +57,14 @@ export interface TerminalViewportProps {
  * session, streams output in, sends keystrokes out, and keeps the PTY sized to
  * the visible area. The whole lifecycle lives in one effect keyed by `cwd`.
  */
+/** Quote a filesystem path for safe shell pasting. */
+function shellQuote(p: string): string {
+  if (/[\s'"\\$`!#&*?;<>|(){}[\]]/.test(p)) {
+    return "'" + p.replace(/'/g, "'\\''") + "'";
+  }
+  return p;
+}
+
 export function TerminalViewport({
   cwd = null,
   className,
@@ -66,6 +76,27 @@ export function TerminalViewport({
   // Keep the latest onExit without re-running the (heavy) PTY effect.
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+
+  // Write function populated once the PTY session is established.
+  // Used by the file-drop handler to paste paths without going through the
+  // terminalBus (which would target the *active* terminal, not this specific one).
+  const ptyWriteRef = useRef<((data: string) => void) | null>(null);
+
+  // Drop zone ref wraps the whole viewport.
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  const handleFileDrop = useCallback((paths: string[]) => {
+    const write = ptyWriteRef.current;
+    if (!write || paths.length === 0) return;
+    // Paste quoted paths space-separated, no trailing newline so the user
+    // sees the paths in the prompt before pressing Enter.
+    const pasted = paths.map(shellQuote).join(" ") + " ";
+    write(pasted);
+    // Focus this terminal so the pasted text is visible.
+    termRef.current?.focus();
+  }, []);
+
+  const { isDragOver } = useTauriFileDrop(dropZoneRef, handleFileDrop);
   // Same pattern as onExit: the effect below only runs once per `cwd`, so a
   // ref keeps it reading the current initialCommand without needing it in the
   // dependency array (which would otherwise tear down and respawn the shell
@@ -145,6 +176,9 @@ export function TerminalViewport({
         // owns the session itself rather than going through the bus.
         const command = initialCommandRef.current;
         if (command) void writeToPty(id, `${command}\r`);
+        // Populate the drop-handler write ref for this specific PTY.
+        ptyWriteRef.current = (data) => void writeToPty(id, data);
+
         if (registerWithBus) {
           // Expose this session to Iris so it can run commands here. Registered
           // through the module-level bus (not React state) so the command bar
@@ -182,6 +216,7 @@ export function TerminalViewport({
 
     return () => {
       disposed = true;
+      ptyWriteRef.current = null;
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
       dataSub.dispose();
@@ -202,7 +237,20 @@ export function TerminalViewport({
     }
   }, [terminalTheme]);
 
-  return <div ref={containerRef} className={className} />;
+  return (
+    <div ref={dropZoneRef} className={`relative ${className ?? ""}`}>
+      {/* xterm canvas fills the wrapper */}
+      <div ref={containerRef} className="absolute inset-0" />
+      {/* Drop overlay */}
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded"
+          style={{ background: "var(--rt-accent-soft)", border: "2px dashed var(--rt-accent)" }}>
+          <Icon name="file" size={22} className="rt-accent-text" />
+          <p className="rt-accent-text text-xs font-medium">Drop to paste path</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default TerminalViewport;

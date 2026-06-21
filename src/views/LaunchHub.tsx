@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import Icon from "../components/Icon";
 import ThemeSwitcher from "../components/ThemeSwitcher";
@@ -8,8 +8,10 @@ import LaunchActionCard, {
 import RecentWorkspacesPanel from "../components/launch/RecentWorkspacesPanel";
 import type { RecentWorkspace } from "../types";
 import { useAppStore } from "../store/app";
-import { createFile } from "../lib/fs";
+import { useEditorStore } from "../store/editor";
+import { createFile, readFile } from "../lib/fs";
 import { runBackgroundCommand } from "../lib/system";
+import { useTauriFileDrop } from "../hooks/useTauriFileDrop";
 
 type PendingId = "new-file" | "open-folder" | "clone-repo";
 
@@ -48,6 +50,38 @@ export function LaunchHub() {
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [running, setRunning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // ── File / folder drag-and-drop from OS ────────────────────────────────────
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  const handleFileDrop = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) return;
+      const path = paths[0];
+      // Heuristic: last path segment containing a "." is likely a file.
+      const lastName = path.split("/").pop() ?? "";
+      const isLikelyFile = lastName.includes(".");
+
+      if (isLikelyFile) {
+        // Open the file's parent directory as the workspace and load the file
+        // in the Code panel.
+        const parent = path.split("/").slice(0, -1).join("/") || "/";
+        openTerminal(parent);
+        try {
+          await readFile(path); // confirm it's readable text before opening
+          useEditorStore.getState().openFile(path);
+        } catch {
+          // Binary or unreadable — workspace still opened, editor skipped.
+        }
+      } else {
+        // Directory — open directly as workspace.
+        openTerminal(path);
+      }
+    },
+    [openTerminal],
+  );
+
+  const { isDragOver } = useTauriFileDrop(dropZoneRef, handleFileDrop);
 
   function selectAction(id: PendingId) {
     setPending(id);
@@ -141,7 +175,15 @@ export function LaunchHub() {
   const meta = pending ? PENDING_META[pending] : null;
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={dropZoneRef} className="relative flex h-full flex-col">
+      {/* Drop overlay — appears when the user hovers a file/folder over the hub */}
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-xl"
+          style={{ background: "var(--rt-accent-soft)", border: "2px dashed var(--rt-accent)" }}>
+          <Icon name="folderOpen" size={36} className="rt-accent-text" />
+          <p className="rt-accent-text text-sm font-medium">Drop to open</p>
+        </div>
+      )}
       <header className="rt-toolbar flex items-center gap-2 px-3 py-2">
         <Icon name="terminal" size={15} className="rt-accent-text shrink-0" />
         <span className="text-sm font-medium">Retermina</span>
