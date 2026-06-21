@@ -23,49 +23,92 @@ interface ElementSize {
   height: number;
 }
 
-/** Ghost indicator state computed on every drag frame. */
+/** Ghost indicator rendered during drag. */
 interface SwapGhost {
-  /** Grid-unit position of the swap *target* (the panel being displaced). */
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  x: number; y: number; w: number; h: number;
   /**
-   * True = swap is valid and will commit on drop (accent border).
-   * False = swap would violate grid bounds and will be aborted (red border).
+   * "resize" — the displaced panel will be shrunk to fit.
+   * "swap"   — the displaced panel will move to the drag origin.
+   * "abort"  — no valid resolution; drop will be rejected (red).
    */
-  valid: boolean;
+  resolution: "resize" | "swap" | "abort";
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Pure helpers (outside component — stable refs, no closure deps)
 // ---------------------------------------------------------------------------
 
-/** Whether placing `item` at these coords would stay inside the 12×10 grid. */
-function isInBounds(
-  item: { w: number; h: number },
-  x: number,
-  y: number,
-): boolean {
+function isInBounds(item: { w: number; h: number }, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x + item.w <= GRID_COLS && y + item.h <= GRID_ROWS;
 }
 
 /**
- * Return the z-index for `panelId` during a drag gesture.
+ * Try to shrink `displaced` so it no longer overlaps `priority`, while
+ * respecting minW / minH. Returns the resized item, or null if every cut
+ * direction would violate the minimum size constraint.
  *
- * The active panel returns 999 (floats above everything); all others return 10.
- * In practice this is expressed purely in CSS (`.react-draggable-dragging` →
- * `z-index: 999`) so we never need to touch the memoized children divs —
- * this function is kept as the authoritative source of truth for those values.
+ * Strategy: generate all valid single-edge cuts, pick the one that
+ * preserves the most area (minimum disruption to the displaced panel).
  */
-export function getPanelZIndex(
-  panelId: string,
-  draggingId: string | null,
-): number {
+function tryResizeToFit(
+  displaced: LayoutItem,
+  priority: LayoutItem,
+): LayoutItem | null {
+  const minW = displaced.minW ?? 1;
+  const minH = displaced.minH ?? 1;
+  const candidates: LayoutItem[] = [];
+
+  // Displaced extends too far to the RIGHT (priority is to its right)
+  if (displaced.x < priority.x && displaced.x + displaced.w > priority.x) {
+    const newW = priority.x - displaced.x;
+    if (newW >= minW) candidates.push({ ...displaced, w: newW });
+  }
+
+  // Displaced extends too far to the LEFT (priority starts further left)
+  if (
+    displaced.x < priority.x + priority.w &&
+    displaced.x + displaced.w > priority.x + priority.w
+  ) {
+    const newX = priority.x + priority.w;
+    const newW = displaced.x + displaced.w - newX;
+    if (newW >= minW && newX + newW <= GRID_COLS)
+      candidates.push({ ...displaced, x: newX, w: newW });
+  }
+
+  // Displaced extends too far DOWN (priority is above)
+  if (displaced.y < priority.y && displaced.y + displaced.h > priority.y) {
+    const newH = priority.y - displaced.y;
+    if (newH >= minH) candidates.push({ ...displaced, h: newH });
+  }
+
+  // Displaced extends too far UP (priority starts higher)
+  if (
+    displaced.y < priority.y + priority.h &&
+    displaced.y + displaced.h > priority.y + priority.h
+  ) {
+    const newY = priority.y + priority.h;
+    const newH = displaced.y + displaced.h - newY;
+    if (newH >= minH && newY + newH <= GRID_ROWS)
+      candidates.push({ ...displaced, y: newY, h: newH });
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Prefer the candidate that preserves the most panel area.
+  return candidates.reduce((best, c) =>
+    c.w * c.h > best.w * best.h ? c : best,
+  );
+}
+
+/**
+ * Return the z-index for `panelId` during a drag gesture.
+ * Applied via CSS (`.react-draggable-dragging { z-index: 999 }`) so the
+ * memoized children divs are never touched during the gesture.
+ */
+export function getPanelZIndex(panelId: string, draggingId: string | null): number {
   return panelId === draggingId ? 999 : 10;
 }
 
-/** Track a host element's content box via ResizeObserver. */
 function useElementSize() {
   const ref = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<ElementSize>({ width: 0, height: 0 });
@@ -94,9 +137,9 @@ function useElementSize() {
 // ---------------------------------------------------------------------------
 
 export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
-  const panels    = useWorkspaceStore((s) => s.panels);
-  const grid      = useWorkspaceStore((s) => s.grid);
-  const setGrid   = useWorkspaceStore((s) => s.setGrid);
+  const panels     = useWorkspaceStore((s) => s.panels);
+  const grid       = useWorkspaceStore((s) => s.grid);
+  const setGrid    = useWorkspaceStore((s) => s.setGrid);
   const closePanel = useWorkspaceStore((s) => s.closePanel);
 
   const { ref, width, height } = useElementSize();
@@ -107,13 +150,11 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
     return Math.max(MIN_ROW_HEIGHT, Math.floor(usable / GRID_ROWS));
   }, [height]);
 
-  // ── Drag state (local only — never touches the children memo) ─────────────
   const preDragRef = useRef<Layout>([]);
   const [swapGhost, setSwapGhost] = useState<SwapGhost | null>(null);
 
-  // ── Utility ───────────────────────────────────────────────────────────────
+  // ── Clamp ─────────────────────────────────────────────────────────────────
 
-  /** Clamp a layout item to grid bounds. */
   const clamp = useCallback(
     (item: LayoutItem): LayoutItem => ({
       ...item,
@@ -123,47 +164,42 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
     [],
   );
 
-  /**
-   * Convert ghost grid coords to pixel position inside the container.
-   * Derived from the same formula RGL uses internally.
-   */
+  /** Convert a ghost's grid coords to CSS pixels for the overlay div. */
   const ghostPixels = useMemo(() => {
     if (!swapGhost || width === 0) return null;
     const colW = (width - (GRID_COLS - 1) * GRID_MARGIN[0]) / GRID_COLS;
     return {
       left:   swapGhost.x * (colW + GRID_MARGIN[0]),
       top:    swapGhost.y * (rowHeight + GRID_MARGIN[1]),
-      width:  swapGhost.w * colW  + (swapGhost.w - 1) * GRID_MARGIN[0],
+      width:  swapGhost.w * colW + (swapGhost.w - 1) * GRID_MARGIN[0],
       height: swapGhost.h * rowHeight + (swapGhost.h - 1) * GRID_MARGIN[1],
-      valid:  swapGhost.valid,
+      resolution: swapGhost.resolution,
     };
   }, [swapGhost, width, rowHeight]);
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
 
-  /** Snapshot the full layout the instant a drag begins. */
   const handleDragStart = useCallback((layout: Layout) => {
     preDragRef.current = [...layout];
     setSwapGhost(null);
   }, []);
 
   /**
-   * Every drag frame: find the swap candidate from the pre-drag snapshot,
-   * validate grid bounds, and update the ghost indicator accordingly.
-   * Does NOT write to the store — purely visual.
+   * Each drag frame: find the displaced panel, compute the best resolution,
+   * and render the ghost showing what will happen on drop.
+   *
+   *   Resize → ghost shows displaced panel's future shrunken bounds (green)
+   *   Swap   → ghost shows displaced panel at drag origin (green)
+   *   Abort  → ghost shows displaced panel at current position (red)
    */
   const handleDrag = useCallback(
-    (
-      _layout: Layout,
-      _oldItem: LayoutItem | null,
-      newItem: LayoutItem | null,
-    ) => {
-      if (!newItem || !_oldItem) { setSwapGhost(null); return; }
+    (_layout: Layout, oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
+      if (!newItem || !oldItem) { setSwapGhost(null); return; }
 
       const pre = preDragRef.current;
-      const origin = pre.find((i) => i.i === newItem.i) ?? _oldItem;
+      const origin = pre.find((i) => i.i === newItem.i) ?? oldItem;
 
-      // Which pre-drag panel sits under the current drag position?
+      // Which pre-drag panel is under the current drag position?
       const target = pre.find(
         (item) =>
           item.i !== newItem.i &&
@@ -175,30 +211,41 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
 
       if (!target) { setSwapGhost(null); return; }
 
-      // Validate: can the displaced panel fit at the drag origin?
-      const valid = isInBounds(target, origin.x, origin.y);
+      // Try resize first.
+      const resized = tryResizeToFit(target, newItem);
+      if (resized) {
+        setSwapGhost({
+          x: resized.x, y: resized.y,
+          w: resized.w, h: resized.h,
+          resolution: "resize",
+        });
+        return;
+      }
 
-      setSwapGhost({ x: target.x, y: target.y, w: target.w, h: target.h, valid });
+      // Fall back to swap.
+      const swapValid = isInBounds(target, origin.x, origin.y);
+      setSwapGhost({
+        x: swapValid ? origin.x : target.x,
+        y: swapValid ? origin.y : target.y,
+        w: target.w, h: target.h,
+        resolution: swapValid ? "swap" : "abort",
+      });
     },
     [],
   );
 
   /**
-   * On drop: commit a validated swap, or abort back to origin if bounds
-   * would be violated. Clamps every position before writing to the store.
+   * On drop: for each displaced panel attempt resize → swap → abort in order.
+   * If any displaced panel cannot be resolved, the entire drop is aborted and
+   * the dragged panel snaps back to its origin.
    */
   const handleDragStop = useCallback(
-    (
-      _layout: Layout,
-      oldItem: LayoutItem | null,
-      newItem: LayoutItem | null,
-    ) => {
+    (_layout: Layout, oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
       setSwapGhost(null);
       if (!oldItem || !newItem) return;
 
       const pre = preDragRef.current;
 
-      // Panels that the dragged item is overlapping at the drop position.
       const displaced = pre.filter(
         (item) =>
           item.i !== newItem.i &&
@@ -208,19 +255,35 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
           newItem.y + newItem.h > item.y,
       );
 
-      // No collision — plain move, just clamp.
       if (displaced.length === 0) {
         setGrid(_layout.map(clamp));
         return;
       }
 
-      // Constraint check: every displaced panel must fit at the drag origin.
-      const swapValid = displaced.every((d) =>
-        isInBounds(d, oldItem.x, oldItem.y),
-      );
+      // Compute resolution for each displaced panel.
+      const resolutions = new Map<string, LayoutItem>();
+      let abort = false;
 
-      if (!swapValid) {
-        // Abort: return the dragged panel to where it started.
+      for (const d of displaced) {
+        const orig = pre.find((p) => p.i === d.i) ?? d;
+
+        const resized = tryResizeToFit(orig, newItem);
+        if (resized) {
+          resolutions.set(d.i, clamp(resized));
+          continue;
+        }
+
+        if (isInBounds(orig, oldItem.x, oldItem.y)) {
+          resolutions.set(d.i, clamp({ ...orig, x: oldItem.x, y: oldItem.y }));
+          continue;
+        }
+
+        abort = true;
+        break;
+      }
+
+      if (abort) {
+        // Return the dragged panel to its origin; leave everything else clamped.
         setGrid(
           _layout.map((item) =>
             item.i === newItem.i
@@ -231,13 +294,10 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
         return;
       }
 
-      // Commit: swap displaced panels to the drag origin.
       setGrid(
         _layout.map((item) => {
-          const wasDisplaced = displaced.find((d) => d.i === item.i);
-          return wasDisplaced
-            ? clamp({ ...item, x: oldItem.x, y: oldItem.y })
-            : clamp(item);
+          const resolved = resolutions.get(item.i);
+          return resolved ?? clamp(item);
         }),
       );
     },
@@ -250,6 +310,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
   );
 
   // ── Children (memoized — never rebuilt on drag/resize) ────────────────────
+
   const children = useMemo(
     () =>
       panels.map((panel) => {
@@ -271,6 +332,15 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  const ghostColor = ghostPixels
+    ? ghostPixels.resolution === "abort"
+      ? { border: "#ef4444", bg: "rgba(239,68,68,0.12)" }
+      : ghostPixels.resolution === "resize"
+      ? { border: "var(--rt-accent)", bg: "rgba(74,111,165,0.1)" }
+      : { border: "var(--rt-accent)", bg: "var(--rt-accent-soft)" }
+    : null;
+
   return (
     <div ref={ref} className="relative h-full w-full overflow-hidden">
       {!mounted ? null : panels.length === 0 ? (
@@ -281,23 +351,18 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
         </div>
       ) : (
         <>
-          {/* Ghost indicator — swap preview, rendered outside memoized children */}
-          {ghostPixels && (
+          {ghostPixels && ghostColor && (
             <div
               className="pointer-events-none absolute z-50"
               style={{
-                left:   ghostPixels.left,
-                top:    ghostPixels.top,
-                width:  ghostPixels.width,
-                height: ghostPixels.height,
-                borderRadius: "var(--rt-radius-lg)",
-                border: `2px dashed ${
-                  ghostPixels.valid ? "var(--rt-accent)" : "#ef4444"
-                }`,
-                backgroundColor: ghostPixels.valid
-                  ? "var(--rt-accent-soft)"
-                  : "rgba(239, 68, 68, 0.12)",
-                transition: "none",
+                left:            ghostPixels.left,
+                top:             ghostPixels.top,
+                width:           ghostPixels.width,
+                height:          ghostPixels.height,
+                borderRadius:    "var(--rt-radius-lg)",
+                border:          `2px dashed ${ghostColor.border}`,
+                backgroundColor: ghostColor.bg,
+                transition:      "none",
               }}
             />
           )}
