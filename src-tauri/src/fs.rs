@@ -64,6 +64,12 @@ pub fn create_file(path: String) -> Result<(), String> {
         .map_err(|e| format!("Cannot create file: {e}"))
 }
 
+/// Write `content` to `path`, replacing the file completely.
+#[tauri::command]
+pub fn write_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("Cannot write file: {e}"))
+}
+
 /// Read a UTF-8 text file. Returns an error for binary files, missing files,
 /// or files exceeding the 5 MB cap.
 #[tauri::command]

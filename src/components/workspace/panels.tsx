@@ -41,9 +41,18 @@ function CodeViewPanel() {
   const loading = useEditorStore((s) => s.loading);
   const error = useEditorStore((s) => s.error);
   const diffMode = useEditorStore((s) => s.diffMode);
+  const isEditing = useEditorStore((s) => s.isEditing);
+  const editDraft = useEditorStore((s) => s.editDraft);
+  const saving = useEditorStore((s) => s.saving);
+  const saveError = useEditorStore((s) => s.saveError);
+  const startEditing = useEditorStore((s) => s.startEditing);
+  const setDraft = useEditorStore((s) => s.setDraft);
+  const cancelEditing = useEditorStore((s) => s.cancelEditing);
+  const saveEdits = useEditorStore((s) => s.saveEdits);
   const close = useEditorStore((s) => s.close);
 
   const fileName = selectedPath ? selectedPath.split("/").pop() : null;
+  const canEdit = !!selectedPath && !loading && !error;
 
   return (
     <div className="rt-subsurface flex h-full w-full flex-col">
@@ -53,11 +62,52 @@ function CodeViewPanel() {
         <span className="rt-text-muted min-w-0 flex-1 truncate text-xs font-medium">
           {fileName ?? "No file open"}
         </span>
-        {/* Diff toggle button — only when a file is loaded and diff is off */}
-        {selectedPath && !loading && !error && !diffMode && (
-          <DiffViewer headerOnly />
+
+        {/* Diff toggle — hidden while editing */}
+        {canEdit && !isEditing && !diffMode && <DiffViewer headerOnly />}
+
+        {/* Safe Edit controls */}
+        {canEdit && !isEditing && (
+          <button
+            type="button"
+            onClick={startEditing}
+            title="Unlock file for editing"
+            className="rt-btn-outline flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium"
+          >
+            <Icon name="file" size={11} />
+            Edit
+          </button>
         )}
-        {selectedPath && (
+        {canEdit && isEditing && (
+          <>
+            <button
+              type="button"
+              onClick={cancelEditing}
+              disabled={saving}
+              title="Discard changes and lock"
+              className="rt-btn-outline flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium"
+            >
+              <Icon name="close" size={11} />
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={saveEdits}
+              disabled={saving}
+              title="Save and lock"
+              className="rt-btn-outline flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rt-btn-active"
+            >
+              {saving ? (
+                <Icon name="sync" size={11} className="animate-spin" />
+              ) : (
+                <Icon name="file" size={11} />
+              )}
+              {saving ? "Saving…" : "Lock"}
+            </button>
+          </>
+        )}
+
+        {selectedPath && !isEditing && (
           <button
             type="button"
             onClick={close}
@@ -69,10 +119,28 @@ function CodeViewPanel() {
         )}
       </div>
 
-      {/* Body — diff view or plain text */}
-      {diffMode && selectedPath && !loading && !error ? (
+      {/* Save error banner */}
+      {saveError && (
+        <div className="shrink-0 bg-red-500/10 px-3 py-1.5">
+          <p className="text-[11px] text-red-500">{saveError}</p>
+        </div>
+      )}
+
+      {/* Body */}
+      {isEditing ? (
+        /* ── Edit mode ── */
+        <textarea
+          value={editDraft ?? ""}
+          onChange={(e) => setDraft(e.target.value)}
+          spellCheck={false}
+          className="min-h-0 flex-1 resize-none bg-transparent p-3 font-mono text-[12px] leading-relaxed outline-none ring-1 ring-inset ring-[var(--rt-accent)]"
+          style={{ colorScheme: "inherit" }}
+        />
+      ) : diffMode && selectedPath && !loading && !error ? (
+        /* ── Diff mode ── */
         <DiffViewer />
       ) : (
+        /* ── Read-only mode ── */
         <div className="min-h-0 flex-1 overflow-auto">
           {!selectedPath ? (
             <div className="flex h-full items-center justify-center px-4 text-center">

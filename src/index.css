@@ -543,10 +543,20 @@ body {
  * inline transform on every onLayoutChange, and a CSS transition on transform
  * would fight react-draggable's cursor tracking (panel lags cursor → feels
  * broken). The ghost placeholder provides all the needed visual feedback. */
-.retermina-grid .react-grid-item.react-draggable-dragging,
-.retermina-grid .react-grid-item.resizing {
+/* Base z-index for all grid items (matches getPanelZIndex baseline). */
+.retermina-grid .react-grid-item {
+  z-index: 10;
+}
+
+/* Active drag: float above everything (matches getPanelZIndex drag value). */
+.retermina-grid .react-grid-item.react-draggable-dragging {
+  z-index: 999;
   opacity: 0.72;
-  z-index: 100;
+}
+
+.retermina-grid .react-grid-item.resizing {
+  z-index: 999;
+  opacity: 0.72;
 }
 
 .retermina-grid .react-resizable-handle {

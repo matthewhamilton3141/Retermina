@@ -24,6 +24,13 @@ export async function readFile(path: string): Promise<string> {
 }
 
 /**
+ * Overwrite `path` with `content`. Creates the file if it doesn't exist.
+ */
+export async function writeFile(path: string, content: string): Promise<void> {
+  return invoke<void>("write_file", { path, content });
+}
+
+/**
  * Create a new empty file at `path`. Rejects if the file already exists or
  * the parent directory is inaccessible.
  */

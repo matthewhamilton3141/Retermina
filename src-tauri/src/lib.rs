@@ -28,6 +28,7 @@ pub fn run() {
             iris::run_background_command,
             fs::list_dir,
             fs::read_file,
+            fs::write_file,
             fs::create_file
         ])
         .run(tauri::generate_context!())
