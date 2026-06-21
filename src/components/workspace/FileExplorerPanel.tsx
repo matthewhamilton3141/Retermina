@@ -19,24 +19,21 @@ import {
 import { useEditorStore } from "../../store/editor";
 
 // ---------------------------------------------------------------------------
-// Context — shared state / handlers passed to every TreeNode without prop drilling
+// Context
 // ---------------------------------------------------------------------------
 
 interface ExplorerCtx {
   selectedPath: string | null;
   onSelectFile: (path: string) => void;
-  /** Path being renamed inline (null = none). */
   renamingPath: string | null;
   renameValue: string;
   setRenameValue: (v: string) => void;
   submitRename: (entry: DirEntry) => Promise<void>;
   cancelRename: () => void;
-  /** Inline creation state (null = none). */
   creating: { parentPath: string; kind: "file" | "dir"; value: string } | null;
   setCreatingValue: (v: string) => void;
   submitCreating: () => Promise<void>;
   cancelCreating: () => void;
-  /** Open the context menu for `entry` at cursor position. */
   openMenu: (e: React.MouseEvent, entry: DirEntry) => void;
 }
 
@@ -61,10 +58,10 @@ function TreeNode({ entry, depth, refreshKey }: TreeNodeProps) {
   const renameRef = useRef<HTMLInputElement | null>(null);
   const createRef = useRef<HTMLInputElement | null>(null);
 
-  const isRenaming  = ctx.renamingPath === entry.path;
-  const isCreating  = ctx.creating?.parentPath === entry.path;
+  const isRenaming = ctx.renamingPath === entry.path;
+  const isCreating = ctx.creating?.parentPath === entry.path;
 
-  // Re-fetch children when the global refreshKey bumps (after any operation).
+  // Re-fetch children when the global refreshKey bumps.
   useEffect(() => {
     if (expanded) {
       listDir(entry.path).then(setChildren).catch(() => setChildren([]));
@@ -72,17 +69,14 @@ function TreeNode({ entry, depth, refreshKey }: TreeNodeProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  // Focus the rename input when it mounts.
   useEffect(() => {
     if (isRenaming) setTimeout(() => renameRef.current?.select(), 0);
   }, [isRenaming]);
 
-  // Focus the create input when it mounts.
   useEffect(() => {
     if (isCreating && expanded) setTimeout(() => createRef.current?.focus(), 0);
   }, [isCreating, expanded]);
 
-  // Auto-expand when a "new file/folder" creation targets this directory.
   useEffect(() => {
     if (isCreating && !expanded) {
       setExpanded(true);
@@ -107,11 +101,8 @@ function TreeNode({ entry, depth, refreshKey }: TreeNodeProps) {
   }, [entry, expanded, children, ctx]);
 
   const indent = depth * 12;
+  const rowBase = "rt-row flex w-full items-center gap-1.5 py-0.5 pr-2 text-left text-xs";
 
-  const rowBase =
-    "rt-row flex w-full items-center gap-1.5 py-0.5 pr-2 text-left text-xs";
-
-  // ── Directory ──────────────────────────────────────────────────────────────
   if (entry.isDir) {
     return (
       <div>
@@ -160,7 +151,6 @@ function TreeNode({ entry, depth, refreshKey }: TreeNodeProps) {
 
         {expanded && (
           <div>
-            {/* Inline creation input */}
             {isCreating && (
               <form
                 onSubmit={(e) => { e.preventDefault(); void ctx.submitCreating(); }}
@@ -208,7 +198,6 @@ function TreeNode({ entry, depth, refreshKey }: TreeNodeProps) {
     );
   }
 
-  // ── File ───────────────────────────────────────────────────────────────────
   const isSelected = ctx.selectedPath === entry.path;
 
   if (isRenaming) {
@@ -250,11 +239,7 @@ function TreeNode({ entry, depth, refreshKey }: TreeNodeProps) {
 // Context menu
 // ---------------------------------------------------------------------------
 
-interface MenuState {
-  x: number;
-  y: number;
-  entry: DirEntry;
-}
+interface MenuState { x: number; y: number; entry: DirEntry; }
 
 interface ContextMenuProps {
   menu: MenuState;
@@ -286,25 +271,22 @@ function ContextMenu({ menu, onClose, onRename, onDelete, onNewFile, onNewFolder
   return (
     <>
       <div className="fixed inset-0 z-[60]" onMouseDown={onClose} />
-      <div
-        className="rt-menu fixed z-[61] min-w-[160px] py-1"
-        style={{ left: menu.x, top: menu.y }}
-      >
+      <div className="rt-menu fixed z-[61] min-w-[160px] py-1" style={{ left: menu.x, top: menu.y }}>
         {entry.isDir ? (
           <>
             {item("New File", "newFile", () => onNewFile(entry.path))}
             {item("New Folder", "newFolder", () => onNewFolder(entry.path))}
-            <div className="rt-divider my-1 h-px mx-1" />
+            <div className="rt-divider my-1 mx-1 h-px" />
             {item("Rename", "file", () => onRename(entry))}
-            <div className="rt-divider my-1 h-px mx-1" />
+            <div className="rt-divider my-1 mx-1 h-px" />
             {item("Delete", "trash", () => onDelete(entry), true)}
           </>
         ) : (
           <>
             {item("Open", "code", () => {})}
-            <div className="rt-divider my-1 h-px mx-1" />
+            <div className="rt-divider my-1 mx-1 h-px" />
             {item("Rename", "file", () => onRename(entry))}
-            <div className="rt-divider my-1 h-px mx-1" />
+            <div className="rt-divider my-1 mx-1 h-px" />
             {item("Delete", "trash", () => onDelete(entry), true)}
           </>
         )}
@@ -329,27 +311,73 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
   const selectedPath = useEditorStore((s) => s.selectedPath);
   const openFile     = useEditorStore((s) => s.openFile);
 
-  const [menuState, setMenuState]     = useState<MenuState | null>(null);
+  const [menuState, setMenuState]       = useState<MenuState | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue]   = useState("");
-  const [creating, setCreating] = useState<{
+  const [creating, setCreating]         = useState<{
     parentPath: string;
     kind: "file" | "dir";
     value: string;
   } | null>(null);
 
+  const createInputRef = useRef<HTMLInputElement>(null);
+
+  // Full refresh — reloads root entries and bumps refreshKey so all expanded
+  // TreeNodes re-fetch their children.
   const refresh = useCallback(() => {
     if (!cwd) return;
-    setEntries(null);
     setError(null);
     listDir(cwd)
-      .then((data) => { setEntries(data); setRefreshKey((k) => k + 1); })
+      .then((data) => {
+        setEntries(data);
+        setRefreshKey((k) => k + 1);
+      })
       .catch((err) => setError(String(err)));
   }, [cwd]);
 
+  // Silent poll — compares listings without clearing UI state.
+  // Detects files created externally (terminal, LaunchHub new-file, etc.).
+  const silentRefresh = useCallback(async () => {
+    if (!cwd) return;
+    try {
+      const data = await listDir(cwd);
+      setEntries((prev) => {
+        const prevSig = prev?.map((e) => e.path).join("\0") ?? "";
+        const nextSig = data.map((e) => e.path).join("\0");
+        if (prevSig === nextSig) return prev;
+        setRefreshKey((k) => k + 1);
+        return data;
+      });
+    } catch {
+      // ignore transient poll errors
+    }
+  }, [cwd]);
+
+  // Initial load.
   useEffect(() => { refresh(); }, [refresh]);
 
-  // ── Context menu handlers ─────────────────────────────────────────────────
+  // Poll every 3 s for external changes.
+  useEffect(() => {
+    if (!cwd) return;
+    const id = window.setInterval(() => void silentRefresh(), 3000);
+    return () => window.clearInterval(id);
+  }, [cwd, silentRefresh]);
+
+  // Refresh on window focus (e.g. user created a file in another app).
+  useEffect(() => {
+    const onFocus = () => void silentRefresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [silentRefresh]);
+
+  // Focus the root-level create input when it mounts.
+  useEffect(() => {
+    if (creating?.parentPath === cwd) {
+      setTimeout(() => createInputRef.current?.focus(), 0);
+    }
+  }, [creating, cwd]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const openMenu = useCallback((e: React.MouseEvent, entry: DirEntry) => {
     e.preventDefault();
@@ -367,13 +395,11 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
     const newName = renameValue.trim();
     if (!newName || newName === entry.name) { setRenamingPath(null); return; }
     const parent = entry.path.split("/").slice(0, -1).join("/");
-    const newPath = `${parent}/${newName}`;
     try {
-      await renamePath(entry.path, newPath);
+      await renamePath(entry.path, `${parent}/${newName}`);
       setRenamingPath(null);
       refresh();
-    } catch (err) {
-      console.error(err);
+    } catch {
       setRenamingPath(null);
     }
   }, [renameValue, refresh]);
@@ -382,10 +408,10 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
     setMenuState(null);
     if (!window.confirm(`Delete "${entry.name}"?`)) return;
     try { await deletePath(entry.path); refresh(); }
-    catch (err) { console.error(err); }
+    catch { /* ignore */ }
   }, [refresh]);
 
-  const startNewFile   = useCallback((parentPath: string) => {
+  const startNewFile = useCallback((parentPath: string) => {
     setMenuState(null);
     setCreating({ parentPath, kind: "file", value: "" });
   }, []);
@@ -405,8 +431,7 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
       else await createFile(fullPath);
       setCreating(null);
       refresh();
-    } catch (err) {
-      console.error(err);
+    } catch {
       setCreating(null);
     }
   }, [creating, refresh]);
@@ -428,28 +453,51 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
     openMenu,
   };
 
+  const rootIsCreating = creating?.parentPath === cwd;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <Ctx.Provider value={ctxValue}>
       <div className="rt-subsurface flex h-full w-full flex-col">
-        <div className="rt-divider-b rt-text-muted flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
+
+        {/* Header toolbar */}
+        <div className="rt-divider-b rt-text-muted flex items-center gap-1 px-2.5 py-1.5 text-xs">
           <Icon name="folder" size={13} className="rt-accent-text shrink-0" />
-          <span className="truncate font-medium flex-1" title={cwd ?? undefined}>
+          <span className="min-w-0 flex-1 truncate font-medium" title={cwd ?? undefined}>
             {cwd ? cwd.split("/").pop() || cwd : "No folder open"}
           </span>
           {cwd && (
-            <button
-              type="button"
-              onClick={refresh}
-              title="Refresh"
-              className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
-            >
-              <Icon name="sync" size={11} aria-label="Refresh" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => startNewFile(cwd)}
+                title="New File"
+                className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
+              >
+                <Icon name="newFile" size={12} aria-label="New File" />
+              </button>
+              <button
+                type="button"
+                onClick={() => startNewFolder(cwd)}
+                title="New Folder"
+                className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
+              >
+                <Icon name="newFolder" size={12} aria-label="New Folder" />
+              </button>
+              <button
+                type="button"
+                onClick={refresh}
+                title="Refresh"
+                className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
+              >
+                <Icon name="sync" size={11} aria-label="Refresh" />
+              </button>
+            </>
           )}
         </div>
 
+        {/* File tree */}
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {!cwd ? (
             <div className="flex h-full items-center justify-center px-4 text-center">
@@ -457,29 +505,57 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
                 Open a workspace folder to browse its files.
               </p>
             </div>
-          ) : entries === null && !error ? (
+          ) : error ? (
+            <div className="px-3 py-2">
+              <p className="rt-text-muted text-[11px] leading-snug">{error}</p>
+            </div>
+          ) : entries === null ? (
             <div className="flex flex-col gap-1 p-2">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="rt-skeleton h-5 rounded" style={{ width: `${60 + i * 10}%` }} />
               ))}
             </div>
-          ) : error ? (
-            <div className="px-3 py-2">
-              <p className="rt-text-muted text-[11px] leading-snug">{error}</p>
-            </div>
-          ) : entries && entries.length === 0 ? (
-            <div className="flex h-full items-center justify-center px-4 text-center">
-              <p className="rt-text-muted text-xs">Directory is empty.</p>
-            </div>
           ) : (
-            entries?.map((entry) => (
-              <TreeNode
-                key={entry.path}
-                entry={entry}
-                depth={0}
-                refreshKey={refreshKey}
-              />
-            ))
+            <>
+              {/* Root-level inline creation (triggered by header buttons) */}
+              {rootIsCreating && (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); void submitCreating(); }}
+                  className="flex items-center gap-1.5 py-0.5 pl-3 pr-2 text-xs"
+                >
+                  <Icon
+                    name={creating!.kind === "dir" ? "folder" : "file"}
+                    size={12}
+                    className="rt-accent-text shrink-0"
+                  />
+                  <input
+                    ref={createInputRef}
+                    value={creating!.value}
+                    onChange={(e) => setCreating((s) => s && { ...s, value: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Escape") setCreating(null); }}
+                    onBlur={() => setCreating(null)}
+                    className="rt-input min-w-0 flex-1 px-1 py-0 text-xs"
+                    autoComplete="off"
+                    placeholder={creating!.kind === "dir" ? "folder-name" : "file.txt"}
+                  />
+                </form>
+              )}
+
+              {entries.length === 0 && !rootIsCreating ? (
+                <div className="flex h-full items-center justify-center px-4 text-center">
+                  <p className="rt-text-muted text-xs">Directory is empty.</p>
+                </div>
+              ) : (
+                entries.map((entry) => (
+                  <TreeNode
+                    key={entry.path}
+                    entry={entry}
+                    depth={0}
+                    refreshKey={refreshKey}
+                  />
+                ))
+              )}
+            </>
           )}
         </div>
       </div>
