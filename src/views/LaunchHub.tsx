@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import Icon from "../components/Icon";
 import ThemeSwitcher from "../components/ThemeSwitcher";
@@ -11,6 +11,7 @@ import { useAppStore } from "../store/app";
 import { useEditorStore } from "../store/editor";
 import { createFile, readFile } from "../lib/fs";
 import { runBackgroundCommand } from "../lib/system";
+import { getTerminalCwd } from "../lib/terminalImport";
 import { useTauriFileDrop } from "../hooks/useTauriFileDrop";
 
 type PendingId = "new-file" | "open-folder" | "clone-repo";
@@ -50,6 +51,47 @@ export function LaunchHub() {
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [running, setRunning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // ── Terminal import ────────────────────────────────────────────────────────
+  const [importState, setImportState] = useState<
+    | { status: "idle" }
+    | { status: "detecting" }
+    | { status: "found"; cwd: string; app: string }
+    | { status: "error"; msg: string }
+  >({ status: "idle" });
+
+  const runImport = useCallback(async () => {
+    setImportState({ status: "detecting" });
+    try {
+      const result = await getTerminalCwd();
+      setImportState({ status: "found", cwd: result.cwd, app: result.app });
+    } catch (err) {
+      setImportState({ status: "error", msg: String(err) });
+      setTimeout(() => setImportState({ status: "idle" }), 3000);
+    }
+  }, []);
+
+  // When Retermina's window gains focus, quietly probe for a terminal cwd so
+  // we can show the import banner without the user having to click anything —
+  // this approximates the "drag your terminal into Retermina" feel.
+  useEffect(() => {
+    const onFocus = () => {
+      if (importState.status !== "idle") return;
+      getTerminalCwd()
+        .then((result) =>
+          setImportState({ status: "found", cwd: result.cwd, app: result.app }),
+        )
+        .catch(() => {}); // silently ignore — not every focus has a terminal
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [importState.status]);
+
+  const confirmImport = useCallback(() => {
+    if (importState.status !== "found") return;
+    openTerminal(importState.cwd);
+    setImportState({ status: "idle" });
+  }, [importState, openTerminal]);
 
   // ── File / folder drag-and-drop from OS ────────────────────────────────────
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -166,6 +208,15 @@ export function LaunchHub() {
       description: "Clone from a remote URL",
       onSelect: () => selectAction("clone-repo"),
     },
+    {
+      id: "import-terminal",
+      icon: "terminal",
+      label: "Import from Terminal",
+      description: importState.status === "detecting"
+        ? "Detecting…"
+        : "Continue where you left off",
+      onSelect: runImport,
+    },
   ];
 
   const openWorkspace = (entry: RecentEntry) => {
@@ -203,6 +254,34 @@ export function LaunchHub() {
               A customizable terminal workspace
             </p>
           </header>
+
+          {/* Terminal import banner — shown when a terminal cwd was detected */}
+          {importState.status === "found" && (
+            <div className="rt-surface flex items-center gap-3 rounded-xl px-4 py-3">
+              <Icon name="terminal" size={18} className="rt-accent-text shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Continue in {importState.app}</p>
+                <p className="rt-text-muted truncate font-mono text-xs">{importState.cwd}</p>
+              </div>
+              <button
+                type="button"
+                onClick={confirmImport}
+                className="rt-btn-outline shrink-0 px-3 py-1.5 text-xs font-medium rt-btn-active"
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportState({ status: "idle" })}
+                className="rt-btn flex h-6 w-6 shrink-0 items-center justify-center"
+              >
+                <Icon name="close" size={12} aria-label="Dismiss" />
+              </button>
+            </div>
+          )}
+          {importState.status === "error" && (
+            <p className="text-xs text-red-500">{importState.msg}</p>
+          )}
 
           <section>
             <h2 className="rt-text-muted mb-3 text-xs font-semibold uppercase tracking-wider">

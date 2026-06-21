@@ -2,6 +2,7 @@ mod fs;
 mod iris;
 mod localhost;
 mod pty;
+mod terminal_import;
 mod vscode;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -32,7 +33,8 @@ pub fn run() {
             fs::create_file,
             fs::create_dir,
             fs::rename_path,
-            fs::delete_path
+            fs::delete_path,
+            terminal_import::get_terminal_cwd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
