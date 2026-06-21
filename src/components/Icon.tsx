@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   ArrowUp,
   Bot,
+  LayoutGrid,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -103,6 +104,7 @@ export const iconMap = {
   stop: Square,
 
   // Workspace chrome
+  layoutGrid: LayoutGrid,
   terminal: Terminal,
   explorer: Files,
   files: Files,
