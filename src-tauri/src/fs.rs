@@ -52,6 +52,29 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     Ok(entries)
 }
 
+/// Rename (or move) a filesystem entry from `from` to `to`.
+#[tauri::command]
+pub fn rename_path(from: String, to: String) -> Result<(), String> {
+    std::fs::rename(&from, &to).map_err(|e| format!("Cannot rename: {e}"))
+}
+
+/// Delete a file or directory. Directories are removed recursively.
+#[tauri::command]
+pub fn delete_path(path: String) -> Result<(), String> {
+    let meta = std::fs::metadata(&path).map_err(|e| format!("Cannot stat: {e}"))?;
+    if meta.is_dir() {
+        std::fs::remove_dir_all(&path).map_err(|e| format!("Cannot delete directory: {e}"))
+    } else {
+        std::fs::remove_file(&path).map_err(|e| format!("Cannot delete file: {e}"))
+    }
+}
+
+/// Create a directory at `path`, including all parent directories.
+#[tauri::command]
+pub fn create_dir(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("Cannot create directory: {e}"))
+}
+
 /// Create a new empty file at `path`. Fails if the file already exists or the
 /// parent directory is not accessible.
 #[tauri::command]

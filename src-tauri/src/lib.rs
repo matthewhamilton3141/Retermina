@@ -29,7 +29,10 @@ pub fn run() {
             fs::list_dir,
             fs::read_file,
             fs::write_file,
-            fs::create_file
+            fs::create_file,
+            fs::create_dir,
+            fs::rename_path,
+            fs::delete_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

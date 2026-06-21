@@ -30,6 +30,21 @@ export async function writeFile(path: string, content: string): Promise<void> {
   return invoke<void>("write_file", { path, content });
 }
 
+/** Rename or move a filesystem entry. */
+export async function renamePath(from: string, to: string): Promise<void> {
+  return invoke<void>("rename_path", { from, to });
+}
+
+/** Delete a file or directory (directories removed recursively). */
+export async function deletePath(path: string): Promise<void> {
+  return invoke<void>("delete_path", { path });
+}
+
+/** Create a directory, including parent directories. */
+export async function createDir(path: string): Promise<void> {
+  return invoke<void>("create_dir", { path });
+}
+
 /**
  * Create a new empty file at `path`. Rejects if the file already exists or
  * the parent directory is inaccessible.
