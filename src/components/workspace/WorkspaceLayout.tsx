@@ -1,3 +1,20 @@
+/**
+ * WorkspaceLayout — the RGL-powered panel grid.
+ *
+ * react-grid-layout is the sole engine for panel positioning, drag, and
+ * resize. The grid is fully controlled: layout state lives in the Zustand
+ * workspace store and every change (drag, resize, toggle) flows back through
+ * onLayoutChange → setGrid. noCompactor keeps panels static between
+ * explicit user actions.
+ *
+ * During drag, RGL renders its own .react-grid-placeholder at the correct
+ * drop position. No custom pixel-positioned overlay is needed or used.
+ *
+ * Collision resolution (handleDragStop) runs after every drop:
+ *   1. Resize  — shrink the displaced panel along the overlapping edge.
+ *   2. Swap    — move it to the drag origin if resize isn't possible.
+ *   3. Abort   — snap the dragged panel back if neither is valid.
+ */
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { noCompactor, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -23,19 +40,8 @@ interface ElementSize {
   height: number;
 }
 
-/** Ghost indicator rendered during drag. */
-interface SwapGhost {
-  x: number; y: number; w: number; h: number;
-  /**
-   * "resize" — the displaced panel will be shrunk to fit.
-   * "swap"   — the displaced panel will move to the drag origin.
-   * "abort"  — no valid resolution; drop will be rejected (red).
-   */
-  resolution: "resize" | "swap" | "abort";
-}
-
 // ---------------------------------------------------------------------------
-// Pure helpers (outside component — stable refs, no closure deps)
+// Pure helpers
 // ---------------------------------------------------------------------------
 
 function isInBounds(item: { w: number; h: number }, x: number, y: number): boolean {
@@ -43,12 +49,9 @@ function isInBounds(item: { w: number; h: number }, x: number, y: number): boole
 }
 
 /**
- * Try to shrink `displaced` so it no longer overlaps `priority`, while
- * respecting minW / minH. Returns the resized item, or null if every cut
- * direction would violate the minimum size constraint.
- *
- * Strategy: generate all valid single-edge cuts, pick the one that
- * preserves the most area (minimum disruption to the displaced panel).
+ * Try to shrink `displaced` so it no longer overlaps `priority`.
+ * Generates one candidate per overlapping edge, returns the one that
+ * preserves the most area, or null if every direction violates minW/minH.
  */
 function tryResizeToFit(
   displaced: LayoutItem,
@@ -58,13 +61,10 @@ function tryResizeToFit(
   const minH = displaced.minH ?? 1;
   const candidates: LayoutItem[] = [];
 
-  // Displaced extends too far to the RIGHT (priority is to its right)
   if (displaced.x < priority.x && displaced.x + displaced.w > priority.x) {
     const newW = priority.x - displaced.x;
     if (newW >= minW) candidates.push({ ...displaced, w: newW });
   }
-
-  // Displaced extends too far to the LEFT (priority starts further left)
   if (
     displaced.x < priority.x + priority.w &&
     displaced.x + displaced.w > priority.x + priority.w
@@ -74,14 +74,10 @@ function tryResizeToFit(
     if (newW >= minW && newX + newW <= GRID_COLS)
       candidates.push({ ...displaced, x: newX, w: newW });
   }
-
-  // Displaced extends too far DOWN (priority is above)
   if (displaced.y < priority.y && displaced.y + displaced.h > priority.y) {
     const newH = priority.y - displaced.y;
     if (newH >= minH) candidates.push({ ...displaced, h: newH });
   }
-
-  // Displaced extends too far UP (priority starts higher)
   if (
     displaced.y < priority.y + priority.h &&
     displaced.y + displaced.h > priority.y + priority.h
@@ -93,17 +89,13 @@ function tryResizeToFit(
   }
 
   if (candidates.length === 0) return null;
-
-  // Prefer the candidate that preserves the most panel area.
-  return candidates.reduce((best, c) =>
-    c.w * c.h > best.w * best.h ? c : best,
-  );
+  return candidates.reduce((best, c) => (c.w * c.h > best.w * best.h ? c : best));
 }
 
 /**
- * Return the z-index for `panelId` during a drag gesture.
- * Applied via CSS (`.react-draggable-dragging { z-index: 999 }`) so the
- * memoized children divs are never touched during the gesture.
+ * Z-index for a panel during a drag gesture.
+ * Expressed in CSS (.react-draggable-dragging { z-index: 999 }) so the
+ * memoized children divs are never mutated mid-gesture.
  */
 export function getPanelZIndex(panelId: string, draggingId: string | null): number {
   return panelId === draggingId ? 999 : 10;
@@ -150,10 +142,9 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
     return Math.max(MIN_ROW_HEIGHT, Math.floor(usable / GRID_ROWS));
   }, [height]);
 
+  // Snapshot the full layout when a drag begins so handleDragStop can
+  // identify displaced panels by their pre-drag positions.
   const preDragRef = useRef<Layout>([]);
-  const [swapGhost, setSwapGhost] = useState<SwapGhost | null>(null);
-
-  // ── Clamp ─────────────────────────────────────────────────────────────────
 
   const clamp = useCallback(
     (item: LayoutItem): LayoutItem => ({
@@ -164,84 +155,20 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
     [],
   );
 
-  /** Convert a ghost's grid coords to CSS pixels for the overlay div. */
-  const ghostPixels = useMemo(() => {
-    if (!swapGhost || width === 0) return null;
-    const colW = (width - (GRID_COLS - 1) * GRID_MARGIN[0]) / GRID_COLS;
-    return {
-      left:   swapGhost.x * (colW + GRID_MARGIN[0]),
-      top:    swapGhost.y * (rowHeight + GRID_MARGIN[1]),
-      width:  swapGhost.w * colW + (swapGhost.w - 1) * GRID_MARGIN[0],
-      height: swapGhost.h * rowHeight + (swapGhost.h - 1) * GRID_MARGIN[1],
-      resolution: swapGhost.resolution,
-    };
-  }, [swapGhost, width, rowHeight]);
-
-  // ── Drag handlers ─────────────────────────────────────────────────────────
-
   const handleDragStart = useCallback((layout: Layout) => {
     preDragRef.current = [...layout];
-    setSwapGhost(null);
   }, []);
 
   /**
-   * Each drag frame: find the displaced panel, compute the best resolution,
-   * and render the ghost showing what will happen on drop.
+   * Collision resolution on drop.
    *
-   *   Resize → ghost shows displaced panel's future shrunken bounds (green)
-   *   Swap   → ghost shows displaced panel at drag origin (green)
-   *   Abort  → ghost shows displaced panel at current position (red)
-   */
-  const handleDrag = useCallback(
-    (_layout: Layout, oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
-      if (!newItem || !oldItem) { setSwapGhost(null); return; }
-
-      const pre = preDragRef.current;
-      const origin = pre.find((i) => i.i === newItem.i) ?? oldItem;
-
-      // Which pre-drag panel is under the current drag position?
-      const target = pre.find(
-        (item) =>
-          item.i !== newItem.i &&
-          newItem.x < item.x + item.w &&
-          newItem.x + newItem.w > item.x &&
-          newItem.y < item.y + item.h &&
-          newItem.y + newItem.h > item.y,
-      );
-
-      if (!target) { setSwapGhost(null); return; }
-
-      // Try resize first.
-      const resized = tryResizeToFit(target, newItem);
-      if (resized) {
-        setSwapGhost({
-          x: resized.x, y: resized.y,
-          w: resized.w, h: resized.h,
-          resolution: "resize",
-        });
-        return;
-      }
-
-      // Fall back to swap.
-      const swapValid = isInBounds(target, origin.x, origin.y);
-      setSwapGhost({
-        x: swapValid ? origin.x : target.x,
-        y: swapValid ? origin.y : target.y,
-        w: target.w, h: target.h,
-        resolution: swapValid ? "swap" : "abort",
-      });
-    },
-    [],
-  );
-
-  /**
-   * On drop: for each displaced panel attempt resize → swap → abort in order.
-   * If any displaced panel cannot be resolved, the entire drop is aborted and
-   * the dragged panel snaps back to its origin.
+   * RGL with noCompactor leaves displaced panels where they end up after its
+   * internal collision pass (which can push them outside maxRows). We intercept
+   * here and apply: resize → swap → abort, using the pre-drag snapshot so the
+   * correct panel is identified regardless of where RGL moved it.
    */
   const handleDragStop = useCallback(
     (_layout: Layout, oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
-      setSwapGhost(null);
       if (!oldItem || !newItem) return;
 
       const pre = preDragRef.current;
@@ -260,7 +187,6 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
         return;
       }
 
-      // Compute resolution for each displaced panel.
       const resolutions = new Map<string, LayoutItem>();
       let abort = false;
 
@@ -268,10 +194,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
         const orig = pre.find((p) => p.i === d.i) ?? d;
 
         const resized = tryResizeToFit(orig, newItem);
-        if (resized) {
-          resolutions.set(d.i, clamp(resized));
-          continue;
-        }
+        if (resized) { resolutions.set(d.i, clamp(resized)); continue; }
 
         if (isInBounds(orig, oldItem.x, oldItem.y)) {
           resolutions.set(d.i, clamp({ ...orig, x: oldItem.x, y: oldItem.y }));
@@ -283,7 +206,6 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
       }
 
       if (abort) {
-        // Return the dragged panel to its origin; leave everything else clamped.
         setGrid(
           _layout.map((item) =>
             item.i === newItem.i
@@ -295,10 +217,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
       }
 
       setGrid(
-        _layout.map((item) => {
-          const resolved = resolutions.get(item.i);
-          return resolved ?? clamp(item);
-        }),
+        _layout.map((item) => resolutions.get(item.i) ?? clamp(item)),
       );
     },
     [setGrid, clamp],
@@ -309,8 +228,8 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
     [setGrid, clamp],
   );
 
-  // ── Children (memoized — never rebuilt on drag/resize) ────────────────────
-
+  // Memoized children — never rebuilt on drag/resize so live terminals
+  // survive grid gestures without remounting.
   const children = useMemo(
     () =>
       panels.map((panel) => {
@@ -331,18 +250,8 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
     [panels, cwd, closePanel],
   );
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  const ghostColor = ghostPixels
-    ? ghostPixels.resolution === "abort"
-      ? { border: "#ef4444", bg: "rgba(239,68,68,0.12)" }
-      : ghostPixels.resolution === "resize"
-      ? { border: "var(--rt-accent)", bg: "rgba(74,111,165,0.1)" }
-      : { border: "var(--rt-accent)", bg: "var(--rt-accent-soft)" }
-    : null;
-
   return (
-    <div ref={ref} className="relative h-full w-full overflow-hidden">
+    <div ref={ref} className="h-full w-full overflow-hidden">
       {!mounted ? null : panels.length === 0 ? (
         <div className="flex h-full w-full items-center justify-center px-6 text-center">
           <p className="rt-text-muted text-sm">
@@ -350,53 +259,34 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
           </p>
         </div>
       ) : (
-        <>
-          {ghostPixels && ghostColor && (
-            <div
-              className="pointer-events-none absolute z-50"
-              style={{
-                left:            ghostPixels.left,
-                top:             ghostPixels.top,
-                width:           ghostPixels.width,
-                height:          ghostPixels.height,
-                borderRadius:    "var(--rt-radius-lg)",
-                border:          `2px dashed ${ghostColor.border}`,
-                backgroundColor: ghostColor.bg,
-                transition:      "none",
-              }}
-            />
-          )}
-
-          <GridLayout
-            className="retermina-grid"
-            width={width}
-            layout={grid}
-            onLayoutChange={handleLayoutChange}
-            onDragStart={handleDragStart}
-            onDrag={handleDrag}
-            onDragStop={handleDragStop}
-            compactor={noCompactor}
-            gridConfig={{
-              cols: GRID_COLS,
-              rowHeight,
-              margin: GRID_MARGIN,
-              containerPadding: [0, 0],
-              maxRows: GRID_ROWS,
-            }}
-            dragConfig={{
-              enabled: true,
-              handle: ".panel-drag-handle",
-              cancel: ".panel-no-drag",
-              bounded: true,
-            }}
-            resizeConfig={{
-              enabled: true,
-              handles: ["n", "ne", "nw", "se", "s", "e", "w", "sw"],
-            }}
-          >
-            {children}
-          </GridLayout>
-        </>
+        <GridLayout
+          className="retermina-grid"
+          width={width}
+          layout={grid}
+          onLayoutChange={handleLayoutChange}
+          onDragStart={handleDragStart}
+          onDragStop={handleDragStop}
+          compactor={noCompactor}
+          gridConfig={{
+            cols: GRID_COLS,
+            rowHeight,
+            margin: GRID_MARGIN,
+            containerPadding: [0, 0],
+            maxRows: GRID_ROWS,
+          }}
+          dragConfig={{
+            enabled: true,
+            handle: ".panel-drag-handle",
+            cancel: ".panel-no-drag",
+            bounded: true,
+          }}
+          resizeConfig={{
+            enabled: true,
+            handles: ["n", "ne", "nw", "se", "s", "e", "w", "sw"],
+          }}
+        >
+          {children}
+        </GridLayout>
       )}
     </div>
   );
