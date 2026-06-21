@@ -103,15 +103,31 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [theme.id, accentColor, fontId]);
 
+  // Overlay accent-dependent terminal colours so cursor + selection track the
+  // live accent choice. When no custom colour is set the static theme values apply.
+  const terminalTheme = useMemo<ITheme>(() => {
+    if (!accentColor || !/^#[0-9a-fA-F]{6}$/.test(accentColor)) {
+      return theme.terminal;
+    }
+    return {
+      ...theme.terminal,
+      cursor:              accentColor,
+      selectionBackground: hexToRgba(accentColor, 0.3),
+      // Remap the theme's "blue" slot (used for links / active items in many palettes)
+      blue:                accentColor,
+      brightBlue:          accentColor,
+    };
+  }, [theme, accentColor]);
+
   const value = useMemo<ThemeContextValue>(
     () => ({
       themeId: theme.id,
       theme,
       themes: THEMES,
-      terminalTheme: theme.terminal,
+      terminalTheme,
       setTheme,
     }),
-    [theme, setTheme],
+    [theme, terminalTheme, setTheme],
   );
 
   return (
