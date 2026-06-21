@@ -7,6 +7,7 @@ import DiffViewer from "./DiffViewer";
 import FileExplorerPanel from "./FileExplorerPanel";
 import LivePreviewPanel from "./LivePreviewPanel";
 import LocalhostPanel from "./LocalhostPanel";
+import { SplitTerminalPanel } from "./SplitTerminalPanel";
 import TerminalViewport from "./TerminalViewport";
 
 /** Context handed to a panel renderer. */
@@ -19,16 +20,9 @@ export interface PanelRenderContext {
 /* Terminal                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const TerminalPanel = memo(function TerminalPanel({
-  cwd,
-}: {
-  cwd: string | null;
-}) {
-  return (
-    <div className="rt-terminal-surface h-full w-full p-2">
-      <TerminalViewport cwd={cwd} className="h-full w-full" />
-    </div>
-  );
+// Terminal panel is now split-capable — see SplitTerminalPanel.tsx
+const TerminalPanel = memo(function TerminalPanel({ cwd }: { cwd: string | null }) {
+  return <SplitTerminalPanel cwd={cwd} />;
 });
 
 /* -------------------------------------------------------------------------- */
