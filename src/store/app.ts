@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from "../lib/theme";
+import { useRecentStore } from "./recent";
 
 /** Which top-level screen is showing. */
 export type AppView = "launch" | "workspace";
@@ -34,8 +35,10 @@ export const useAppStore = create<AppState>()(
       view: "launch",
       workspaceCwd: null,
       themeId: DEFAULT_THEME_ID,
-      openTerminal: (cwd = null) =>
-        set({ view: "workspace", workspaceCwd: cwd }),
+      openTerminal: (cwd = null) => {
+        if (cwd) useRecentStore.getState().record(cwd);
+        set({ view: "workspace", workspaceCwd: cwd });
+      },
       goToLaunch: () => set({ view: "launch", workspaceCwd: null }),
       setTheme: (id) => set({ themeId: id }),
     }),

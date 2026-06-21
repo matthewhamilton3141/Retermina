@@ -6,7 +6,7 @@ import LaunchActionCard, {
   type LaunchAction,
 } from "../components/launch/LaunchActionCard";
 import RecentWorkspacesPanel from "../components/launch/RecentWorkspacesPanel";
-import type { RecentWorkspace } from "../types";
+import type { RecentEntry } from "../store/recent";
 import { useAppStore } from "../store/app";
 import { useEditorStore } from "../store/editor";
 import { createFile, readFile } from "../lib/fs";
@@ -168,8 +168,8 @@ export function LaunchHub() {
     },
   ];
 
-  const openWorkspace = (workspace: RecentWorkspace) => {
-    openTerminal(workspace.path);
+  const openWorkspace = (entry: RecentEntry) => {
+    openTerminal(entry.path);
   };
 
   const meta = pending ? PENDING_META[pending] : null;

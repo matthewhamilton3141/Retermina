@@ -1,73 +1,67 @@
-import { useEffect, useState } from "react";
-
-import Icon, { type IconName } from "../Icon";
-import { getRecentWorkspaces } from "../../lib/tauri";
+import Icon from "../Icon";
+import { useRecentStore, type RecentEntry } from "../../store/recent";
 import { parentDir } from "../../lib/format";
-import type { RecentKind, RecentWorkspace } from "../../types";
-
-const KIND_ICON: Record<RecentKind, IconName> = {
-  folder: "folder",
-  file: "file",
-  workspace: "files",
-};
 
 export interface RecentWorkspacesPanelProps {
-  onOpen?: (workspace: RecentWorkspace) => void;
+  onOpen?: (entry: RecentEntry) => void;
 }
 
 export function RecentWorkspacesPanel({ onOpen }: RecentWorkspacesPanelProps) {
-  // `null` = still loading; `[]` = loaded but empty.
-  const [items, setItems] = useState<RecentWorkspace[] | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    getRecentWorkspaces(10).then((data) => {
-      if (active) setItems(data);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const entries = useRecentStore((s) => s.entries);
+  const remove  = useRecentStore((s) => s.remove);
+  const clear   = useRecentStore((s) => s.clear);
 
   return (
     <section className="w-full">
-      <h2 className="rt-text-muted mb-3 text-xs font-semibold uppercase tracking-wider">
-        Recent Workspaces
-      </h2>
+      <div className="mb-3 flex items-center">
+        <h2 className="rt-text-muted text-xs font-semibold uppercase tracking-wider flex-1">
+          Recent Workspaces
+        </h2>
+        {entries.length > 0 && (
+          <button
+            type="button"
+            onClick={clear}
+            className="rt-btn px-1.5 py-0.5 text-[11px]"
+            title="Clear history"
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
-      {items === null ? (
-        <LoadingRows />
-      ) : items.length === 0 ? (
+      {entries.length === 0 ? (
         <EmptyState />
       ) : (
         <ul className="flex flex-col gap-0.5">
-          {items.map((ws) => (
-            <li key={`${ws.kind}:${ws.path}`}>
+          {entries.map((entry) => (
+            <li key={entry.path} className="group/row flex items-center">
               <button
                 type="button"
-                onClick={() => onOpen?.(ws)}
-                disabled={!ws.exists}
-                title={ws.path}
-                className="rt-row group flex w-full items-center gap-3 px-3 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => onOpen?.(entry)}
+                title={entry.path}
+                className="rt-row flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
               >
-                <Icon
-                  name={KIND_ICON[ws.kind]}
-                  size={18}
-                  className="rt-row-icon shrink-0"
-                />
+                <Icon name="folder" size={18} className="rt-row-icon shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">
-                    {ws.name}
+                    {entry.name}
                   </span>
                   <span className="rt-text-muted block truncate text-xs">
-                    {parentDir(ws.path)}
+                    {parentDir(entry.path)}
                   </span>
                 </span>
-                {!ws.exists && (
-                  <span className="rt-badge shrink-0 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
-                    Missing
-                  </span>
-                )}
+                <span className="rt-text-faint shrink-0 text-[10px]">
+                  {formatAge(entry.openedAt)}
+                </span>
+              </button>
+              {/* Remove button — visible on row hover */}
+              <button
+                type="button"
+                onClick={() => remove(entry.path)}
+                title="Remove from history"
+                className="rt-btn mr-1 flex h-6 w-6 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/row:opacity-100"
+              >
+                <Icon name="close" size={11} aria-label="Remove" />
               </button>
             </li>
           ))}
@@ -77,29 +71,27 @@ export function RecentWorkspacesPanel({ onOpen }: RecentWorkspacesPanelProps) {
   );
 }
 
-function LoadingRows() {
-  return (
-    <ul className="flex flex-col gap-0.5" aria-hidden>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <li key={i} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-          <span className="rt-skeleton h-4 w-4 animate-pulse rounded" />
-          <span className="flex-1">
-            <span className="rt-skeleton block h-3 w-32 animate-pulse rounded" />
-            <span className="rt-skeleton mt-1.5 block h-2.5 w-48 animate-pulse rounded opacity-60" />
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
+/** Human-readable relative age: "just now", "5m ago", "3h ago", "2d ago". */
+function formatAge(openedAt: number): string {
+  const diff = Date.now() - openedAt;
+  const mins  = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days  = Math.floor(diff / 86_400_000);
+
+  if (mins  <  1) return "just now";
+  if (hours <  1) return `${mins}m ago`;
+  if (days  <  1) return `${hours}h ago`;
+  if (days  < 30) return `${days}d ago`;
+  return new Date(openedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function EmptyState() {
   return (
     <div className="rt-empty flex flex-col items-center gap-2 px-4 py-8 text-center">
       <Icon name="folder" size={22} className="rt-text-faint" />
-      <p className="rt-text-muted text-sm">No recent workspaces found</p>
+      <p className="rt-text-muted text-sm">No recent workspaces</p>
       <p className="rt-text-faint max-w-xs text-xs">
-        Projects you open in VSCode will appear here automatically.
+        Folders you open will appear here.
       </p>
     </div>
   );
