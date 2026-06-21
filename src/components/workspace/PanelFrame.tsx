@@ -74,11 +74,11 @@ export function PanelFrame({ icon, title, panelId, onClose, children }: PanelFra
         )}
       </div>
 
-      {/* Content: font size applied here so the panel chrome stays fixed size.
-          overflow-auto allows scrolling enlarged content without breaking bounds. */}
+      {/* Content: zoom scales rem-based Tailwind utilities (unlike fontSize %).
+          overflow-hidden lets each panel's own internal scroller handle overflow. */}
       <div
-        className="min-h-0 flex-1 overflow-auto"
-        style={fontSize !== 100 ? { fontSize: `${fontSize}%` } : undefined}
+        className="min-h-0 flex-1 overflow-hidden"
+        style={fontSize !== 100 ? { zoom: fontSize / 100 } : undefined}
       >
         {children}
       </div>

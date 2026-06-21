@@ -104,7 +104,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme.id, accentColor, fontId]);
 
   // Overlay accent-dependent terminal colours so cursor + selection track the
-  // live accent choice. When no custom colour is set the static theme values apply.
+  // live accent choice. Only cursor and selectionBackground are overridden —
+  // the ANSI colour palette slots (red, blue, green, …) are left untouched
+  // because terminal apps like Claude Code use them for their own UI colours.
   const terminalTheme = useMemo<ITheme>(() => {
     if (!accentColor || !/^#[0-9a-fA-F]{6}$/.test(accentColor)) {
       return theme.terminal;
@@ -112,10 +114,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return {
       ...theme.terminal,
       cursor:              accentColor,
-      selectionBackground: hexToRgba(accentColor, 0.3),
-      // Remap the theme's "blue" slot (used for links / active items in many palettes)
-      blue:                accentColor,
-      brightBlue:          accentColor,
+      selectionBackground: hexToRgba(accentColor, 0.25),
     };
   }, [theme, accentColor]);
 

@@ -32,7 +32,7 @@ export interface TerminalWorkspaceProps {
 // Panels dropdown — single button that opens a checklist of all panel kinds
 // ---------------------------------------------------------------------------
 
-function PanelsDropdown() {
+function PanelsDropdown({ showLabel = false }: { showLabel?: boolean }) {
   const panels      = useWorkspaceStore((s) => s.panels);
   const togglePanel = useWorkspaceStore((s) => s.togglePanel);
   const visibleKinds = new Set(panels.map((p) => p.kind));
@@ -60,7 +60,7 @@ function PanelsDropdown() {
         title="Toggle panels"
       >
         <Icon name="layoutGrid" size={14} />
-        <span>Panels</span>
+        {showLabel && <span>Panels</span>}
         {activeCount > 0 && (
           <span className="rt-badge px-1 py-0 text-[9px] tabular-nums">{activeCount}</span>
         )}
@@ -369,9 +369,9 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
         {/* Right: panel controls + utility buttons */}
         <div className="ml-auto flex shrink-0 items-center gap-1">
 
-          {/* Panel toggles — rendered differently per toolbarStyle */}
+          {/* Panel toggles */}
           {toolbarStyle === "dropdown" ? (
-            <PanelsDropdown />
+            <PanelsDropdown showLabel={showLabels} />
           ) : (
             PANEL_KINDS.map((kind) => {
               const meta   = PANEL_META[kind];
@@ -383,9 +383,10 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
                   onClick={() => togglePanel(kind)}
                   aria-pressed={active}
                   title={`${active ? "Hide" : "Show"} ${meta.label}`}
-                  className={`rt-btn-outline flex items-center px-2 py-1 text-xs font-medium ${active ? "rt-btn-active" : ""}`}
+                  className={`rt-btn-outline flex items-center gap-1.5 px-2 py-1 text-xs font-medium ${active ? "rt-btn-active" : ""}`}
                 >
                   <Icon name={meta.icon} size={14} />
+                  {showLabels && <span>{meta.label}</span>}
                 </button>
               );
             })
