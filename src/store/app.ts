@@ -5,45 +5,53 @@ import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from "../lib/theme";
 import { useRecentStore } from "./recent";
 import { useSessionStore } from "./session";
 
-/** Which top-level screen is showing. */
 export type AppView = "launch" | "workspace";
-
-/** How the panel toggles are displayed in the workspace toolbar. */
 export type ToolbarStyle = "dropdown" | "icons";
+export type TopBarStyle  = "icon-only" | "icon-and-text";
+
+export interface CustomTheme {
+  id: string;
+  name: string;
+  /** Base theme applied before overrides. */
+  baseThemeId: ThemeId;
+  accentColor: string;
+}
 
 interface AppState {
   view: AppView;
-  /** Working directory for the active workspace (null = blank terminal). */
   workspaceCwd: string | null;
-  /** Active theme engine id. */
   themeId: ThemeId;
-  /** How panel toggles appear in the toolbar. */
   toolbarStyle: ToolbarStyle;
-  /** Custom accent colour override (hex string) — null means use the theme default. */
+  topBarStyle: TopBarStyle;
   accentColor: string | null;
-  /** Open the Terminal Workspace, optionally rooted at a directory. */
+  fontId: string;
+  customThemes: CustomTheme[];
+
   openTerminal: (cwd?: string | null) => void;
-  /** Return to the Launch Hub. */
   goToLaunch: () => void;
-  /** Switch the active theme engine. */
   setTheme: (id: ThemeId) => void;
-  /** Switch the toolbar style. */
   setToolbarStyle: (style: ToolbarStyle) => void;
-  /** Override the accent colour across all themes. Pass null to reset. */
+  setTopBarStyle: (style: TopBarStyle) => void;
   setAccentColor: (color: string | null) => void;
+  setFontId: (id: string) => void;
+  saveCustomTheme: (name: string) => void;
+  removeCustomTheme: (id: string) => void;
 }
 
-/** Persisted schema version; bump when the persisted shape changes. */
 export const APP_STATE_VERSION = 1;
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       view: "launch",
       workspaceCwd: null,
       themeId: DEFAULT_THEME_ID,
       toolbarStyle: "dropdown",
+      topBarStyle: "icon-only",
       accentColor: null,
+      fontId: "default",
+      customThemes: [],
+
       openTerminal: (cwd = null) => {
         if (cwd) {
           useRecentStore.getState().record(cwd);
@@ -57,15 +65,34 @@ export const useAppStore = create<AppState>()(
       },
       setTheme: (id) => set({ themeId: id }),
       setToolbarStyle: (style) => set({ toolbarStyle: style }),
+      setTopBarStyle: (style) => set({ topBarStyle: style }),
       setAccentColor: (color) => set({ accentColor: color }),
+      setFontId: (id) => set({ fontId: id }),
+
+      saveCustomTheme: (name) => {
+        const { themeId, accentColor } = get();
+        const id = `custom-${Date.now()}`;
+        set((s) => ({
+          customThemes: [
+            { id, name, baseThemeId: themeId, accentColor: accentColor ?? "#10b981" },
+            ...s.customThemes.filter((t) => t.name !== name), // overwrite same name
+          ],
+        }));
+      },
+
+      removeCustomTheme: (id) =>
+        set((s) => ({ customThemes: s.customThemes.filter((t) => t.id !== id) })),
     }),
     {
       name: "retermina.app",
       version: APP_STATE_VERSION,
-      partialize: (state) => ({
-        themeId: state.themeId,
-        toolbarStyle: state.toolbarStyle,
-        accentColor: state.accentColor,
+      partialize: (s) => ({
+        themeId: s.themeId,
+        toolbarStyle: s.toolbarStyle,
+        topBarStyle: s.topBarStyle,
+        accentColor: s.accentColor,
+        fontId: s.fontId,
+        customThemes: s.customThemes,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
@@ -73,10 +100,16 @@ export const useAppStore = create<AppState>()(
         const toolbarStyle: ToolbarStyle =
           p?.toolbarStyle === "dropdown" || p?.toolbarStyle === "icons"
             ? p.toolbarStyle : current.toolbarStyle;
+        const topBarStyle: TopBarStyle =
+          p?.topBarStyle === "icon-only" || p?.topBarStyle === "icon-and-text"
+            ? p.topBarStyle : current.topBarStyle;
         const accentColor =
-          typeof p?.accentColor === "string" || p?.accentColor === null
-            ? p.accentColor ?? null : current.accentColor;
-        return { ...current, themeId, toolbarStyle, accentColor };
+          typeof p?.accentColor === "string" ? p.accentColor
+          : p?.accentColor === null ? null
+          : current.accentColor;
+        const fontId = typeof p?.fontId === "string" ? p.fontId : current.fontId;
+        const customThemes = Array.isArray(p?.customThemes) ? p!.customThemes : current.customThemes;
+        return { ...current, themeId, toolbarStyle, topBarStyle, accentColor, fontId, customThemes };
       },
     },
   ),

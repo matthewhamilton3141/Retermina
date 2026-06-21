@@ -240,6 +240,7 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
             <PanelFrame
               icon={PANEL_META[panel.kind].icon}
               title={panel.title}
+              panelId={panel.id}
               onClose={() => closePanel(panel.id)}
             >
               {renderer({ cwd })}

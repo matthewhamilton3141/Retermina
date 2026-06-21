@@ -29,6 +29,7 @@ import {
   type ThemeId,
   type ThemeMeta,
 } from "../lib/theme";
+import { FONT_BY_ID } from "../lib/fonts";
 
 export interface ThemeContextValue {
   /** The active engine id. */
@@ -71,6 +72,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const themeId     = useAppStore((state) => state.themeId);
   const setTheme    = useAppStore((state) => state.setTheme);
   const accentColor = useAppStore((state) => state.accentColor);
+  const fontId      = useAppStore((state) => state.fontId);
 
   // Tolerate an unknown persisted id by resolving to the default engine.
   const theme = resolveTheme(themeId);
@@ -91,7 +93,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       el.style.removeProperty("--rt-ring");
       el.style.removeProperty("--rt-grid-placeholder");
     }
-  }, [theme.id, accentColor]);
+
+    // Font family override
+    const font = FONT_BY_ID[fontId];
+    if (font?.stack) {
+      el.style.setProperty("--rt-font-sans", font.stack);
+    } else {
+      el.style.removeProperty("--rt-font-sans");
+    }
+  }, [theme.id, accentColor, fontId]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({

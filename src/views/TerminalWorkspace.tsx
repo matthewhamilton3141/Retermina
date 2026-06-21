@@ -9,7 +9,8 @@ import WorkspaceLayout from "../components/workspace/WorkspaceLayout";
 import { prettyPath } from "../lib/format";
 import { PANEL_KINDS, PANEL_META } from "../lib/workspaceLayout";
 import { useWorkspaceStore } from "../store/workspace";
-import { useAppStore, type ToolbarStyle } from "../store/app";
+import { useAppStore, type ToolbarStyle, type TopBarStyle } from "../store/app";
+import { FONTS } from "../lib/fonts";
 
 const ACCENT_PRESETS: { name: string; hex: string }[] = [
   { name: "Emerald",  hex: "#10b981" },
@@ -102,7 +103,7 @@ function PanelsDropdown() {
 }
 
 // ---------------------------------------------------------------------------
-// Settings panel — accent colour + toolbar style
+// Settings panel
 // ---------------------------------------------------------------------------
 
 const TOOLBAR_OPTIONS: { style: ToolbarStyle; label: string; desc: string }[] = [
@@ -110,13 +111,66 @@ const TOOLBAR_OPTIONS: { style: ToolbarStyle; label: string; desc: string }[] = 
   { style: "icons",    label: "Icon strip",      desc: "Individual icon-only buttons" },
 ];
 
+const TOPBAR_OPTIONS: { style: TopBarStyle; label: string; desc: string }[] = [
+  { style: "icon-only",     label: "Icons only",      desc: "Compact — icons with tooltips" },
+  { style: "icon-and-text", label: "Icons + labels",  desc: "Spacious — icon beside text" },
+];
+
+function RadioGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { style: T; label: string; desc: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <>
+      <p className="rt-text-faint px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest">
+        {label}
+      </p>
+      {options.map(({ style, label: lbl, desc }) => {
+        const active = value === style;
+        return (
+          <button
+            key={style}
+            type="button"
+            onClick={() => onChange(style)}
+            className={`rt-menu-item flex w-full items-start gap-2.5 px-3 py-1.5 text-left ${active ? "rt-btn-active" : ""}`}
+          >
+            <span className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+              active ? "border-[var(--rt-accent)] bg-[var(--rt-accent)]" : "border-[var(--rt-border)]"
+            }`}>
+              {active && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+            </span>
+            <span>
+              <span className="block text-xs font-medium">{lbl}</span>
+              <span className="rt-text-faint block text-[10px]">{desc}</span>
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
 function SettingsPanel() {
   const toolbarStyle    = useAppStore((s) => s.toolbarStyle);
   const setToolbarStyle = useAppStore((s) => s.setToolbarStyle);
+  const topBarStyle     = useAppStore((s) => s.topBarStyle);
+  const setTopBarStyle  = useAppStore((s) => s.setTopBarStyle);
   const accentColor     = useAppStore((s) => s.accentColor);
   const setAccentColor  = useAppStore((s) => s.setAccentColor);
+  const fontId          = useAppStore((s) => s.fontId);
+  const setFontId       = useAppStore((s) => s.setFontId);
+  const saveCustomTheme = useAppStore((s) => s.saveCustomTheme);
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]           = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [saving, setSaving]       = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -128,7 +182,6 @@ function SettingsPanel() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // The active accent for display — either custom or the CSS variable
   const activeHex = accentColor ?? null;
 
   return (
@@ -143,14 +196,12 @@ function SettingsPanel() {
       </button>
 
       {open && (
-        <div className="rt-menu absolute right-0 top-full z-[100] mt-1 w-56 py-2 shadow-lg">
+        <div className="rt-menu absolute right-0 top-full z-[100] mt-1 w-60 py-2 shadow-lg" style={{ maxHeight: "80vh", overflowY: "auto" }}>
 
           {/* ── Accent colour ── */}
           <p className="rt-text-faint px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-widest">
             Accent colour
           </p>
-
-          {/* Preset swatches */}
           <div className="grid grid-cols-8 gap-1.5 px-3 pb-2">
             {ACCENT_PRESETS.map(({ name, hex }) => {
               const active = activeHex === hex;
@@ -160,18 +211,14 @@ function SettingsPanel() {
                   type="button"
                   title={name}
                   onClick={() => setAccentColor(hex)}
-                  className="group relative flex h-5 w-5 items-center justify-center rounded-full transition-transform hover:scale-110"
+                  className="relative flex h-5 w-5 items-center justify-center rounded-full transition-transform hover:scale-110"
                   style={{ backgroundColor: hex }}
                 >
-                  {active && (
-                    <span className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-white ring-offset-1 ring-offset-transparent" />
-                  )}
+                  {active && <span className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-white ring-offset-1 ring-offset-transparent" />}
                 </button>
               );
             })}
           </div>
-
-          {/* Custom hex input + colour picker */}
           <div className="flex items-center gap-1.5 px-3 pb-2">
             <label
               title="Custom colour"
@@ -186,7 +233,6 @@ function SettingsPanel() {
                 value={activeHex ?? "#10b981"}
                 onChange={(e) => setAccentColor(e.target.value)}
                 className="absolute inset-0 cursor-pointer opacity-0"
-                title="Custom colour"
               />
             </label>
             <input
@@ -196,49 +242,93 @@ function SettingsPanel() {
                 const v = e.target.value.trim();
                 if (/^#[0-9a-fA-F]{6}$/.test(v)) setAccentColor(v);
               }}
-              placeholder={activeHex ?? "#hexcode"}
+              placeholder="#hexcode"
               className="rt-input min-w-0 flex-1 px-2 py-0.5 font-mono text-[11px]"
               maxLength={7}
             />
             {activeHex && (
-              <button
-                type="button"
-                onClick={() => setAccentColor(null)}
-                title="Reset to theme default"
-                className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
-              >
+              <button type="button" onClick={() => setAccentColor(null)} className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center" title="Reset">
                 <Icon name="close" size={10} />
               </button>
             )}
           </div>
 
+          {/* Save as preset */}
+          {saving ? (
+            <div className="flex items-center gap-1.5 px-3 pb-3">
+              <input
+                autoFocus
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && presetName.trim()) {
+                    saveCustomTheme(presetName.trim());
+                    setPresetName(""); setSaving(false);
+                  }
+                  if (e.key === "Escape") { setPresetName(""); setSaving(false); }
+                }}
+                placeholder="Preset name…"
+                className="rt-input min-w-0 flex-1 px-2 py-1 text-[11px]"
+              />
+              <button
+                type="button"
+                disabled={!presetName.trim()}
+                onClick={() => { saveCustomTheme(presetName.trim()); setPresetName(""); setSaving(false); }}
+                className="rt-btn-outline px-2 py-1 text-[11px] disabled:opacity-40"
+              >
+                Save
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSaving(true)}
+              className="rt-menu-item flex w-full items-center gap-2 px-3 py-1.5 text-[11px]"
+            >
+              <Icon name="plus" size={11} />
+              Save as preset
+            </button>
+          )}
+
+          <div className="rt-divider my-1.5 mx-3 h-px" />
+
+          {/* ── Font ── */}
+          <p className="rt-text-faint px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-widest">
+            Font
+          </p>
+          <div className="px-3 pb-2 flex flex-col gap-0.5">
+            {FONTS.map((f) => {
+              const active = fontId === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFontId(f.id)}
+                  className={`rt-menu-item flex items-center gap-2 rounded px-2 py-1.5 text-left ${active ? "rt-btn-active" : ""}`}
+                >
+                  <span className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${
+                    active ? "border-[var(--rt-accent)] bg-[var(--rt-accent)]" : "border-[var(--rt-border)]"
+                  }`}>
+                    {active && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                  </span>
+                  <span>
+                    <span className="block text-xs font-medium" style={f.stack ? { fontFamily: f.stack } : undefined}>{f.name}</span>
+                    <span className="rt-text-faint block text-[9px]">{f.description}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="rt-divider my-1.5 mx-3 h-px" />
 
           {/* ── Toolbar style ── */}
-          <p className="rt-text-faint px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-widest">
-            Toolbar style
-          </p>
-          {TOOLBAR_OPTIONS.map(({ style, label, desc }) => {
-            const active = toolbarStyle === style;
-            return (
-              <button
-                key={style}
-                type="button"
-                onClick={() => { setToolbarStyle(style); }}
-                className={`rt-menu-item flex w-full items-start gap-2.5 px-3 py-1.5 text-left ${active ? "rt-btn-active" : ""}`}
-              >
-                <span className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                  active ? "border-[var(--rt-accent)] bg-[var(--rt-accent)]" : "border-[var(--rt-border)]"
-                }`}>
-                  {active && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                </span>
-                <span>
-                  <span className="block text-xs font-medium">{label}</span>
-                  <span className="rt-text-faint block text-[10px]">{desc}</span>
-                </span>
-              </button>
-            );
-          })}
+          <RadioGroup label="Panel toggles" options={TOOLBAR_OPTIONS} value={toolbarStyle} onChange={setToolbarStyle} />
+
+          <div className="rt-divider my-1.5 mx-3 h-px" />
+
+          {/* ── Top bar labels ── */}
+          <RadioGroup label="Top bar labels" options={TOPBAR_OPTIONS} value={topBarStyle} onChange={setTopBarStyle} />
         </div>
       )}
     </div>
@@ -255,6 +345,8 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
   const togglePanel  = useWorkspaceStore((s) => s.togglePanel);
   const resetLayout  = useWorkspaceStore((s) => s.resetLayout);
   const toolbarStyle = useAppStore((s) => s.toolbarStyle);
+  const topBarStyle  = useAppStore((s) => s.topBarStyle);
+  const showLabels   = topBarStyle === "icon-and-text";
   const visibleKinds = new Set(panels.map((p) => p.kind));
 
   return (
@@ -301,14 +393,14 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
 
           <div className="rt-divider mx-1 h-5 w-px" />
 
-          {/* Reset — icon only in both modes */}
           <button
             type="button"
             onClick={resetLayout}
             title="Reset layout to default"
-            className="rt-btn-outline flex items-center px-2 py-1 text-xs font-medium"
+            className="rt-btn-outline flex items-center gap-1.5 px-2 py-1 text-xs font-medium"
           >
             <Icon name="sync" size={14} />
+            {showLabels && <span>Reset</span>}
           </button>
 
           <div className="rt-divider mx-1 h-5 w-px" />

@@ -1,44 +1,87 @@
 import type { ReactNode } from "react";
 
 import Icon, { type IconName } from "../Icon";
+import { useWorkspaceStore } from "../../store/workspace";
 
 export interface PanelFrameProps {
-  /** Glyph shown beside the title. */
   icon: IconName;
-  /** Panel title shown in the drag bar. */
   title: string;
-  /** Remove this panel from the workspace. Omit to hide the close button. */
+  /** Used to read/write per-panel font size from the workspace store. */
+  panelId: string;
   onClose?: () => void;
   children: ReactNode;
 }
 
-/**
- * Chrome shared by every workspace widget.
- *
- * The title bar carries the `panel-drag-handle` class, which react-grid-layout
- * uses as the drag handle, so panels only move when grabbed by their header
- * (leaving the body free for terminal input, scrolling, etc.). The close button
- * carries `panel-no-drag` so clicking it never starts a drag.
- */
-export function PanelFrame({ icon, title, onClose, children }: PanelFrameProps) {
+const STEP = 10;
+const MIN  = 70;
+const MAX  = 150;
+
+export function PanelFrame({ icon, title, panelId, onClose, children }: PanelFrameProps) {
+  const fontSize         = useWorkspaceStore((s) => s.panelFontSizes[panelId] ?? 100);
+  const setPanelFontSize = useWorkspaceStore((s) => s.setPanelFontSize);
+
+  const zoomOut = () => setPanelFontSize(panelId, fontSize - STEP);
+  const zoomIn  = () => setPanelFontSize(panelId, fontSize + STEP);
+
   return (
     <div className="rt-panel flex h-full w-full flex-col overflow-hidden">
       <div className="rt-panel-header panel-drag-handle flex cursor-move select-none items-center gap-2 px-2.5 py-1.5">
         <Icon name="drag" size={14} className="rt-text-faint shrink-0" />
         <Icon name={icon} size={14} className="rt-accent-text shrink-0" />
-        <span className="truncate text-xs font-medium">{title}</span>
-        {onClose ? (
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
+
+        {/* Zoom controls — panel-no-drag so clicks don't start a grid drag */}
+        <div className="panel-no-drag flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={zoomOut}
+            disabled={fontSize <= MIN}
+            title="Decrease text size"
+            className="rt-btn flex h-4 w-4 items-center justify-center text-[11px] font-semibold leading-none disabled:opacity-30"
+          >
+            −
+          </button>
+          {fontSize !== 100 && (
+            <button
+              type="button"
+              onClick={() => setPanelFontSize(panelId, 100)}
+              title="Reset text size"
+              className="rt-text-faint min-w-[26px] text-center text-[9px] tabular-nums hover:opacity-70"
+            >
+              {fontSize}%
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={zoomIn}
+            disabled={fontSize >= MAX}
+            title="Increase text size"
+            className="rt-btn flex h-4 w-4 items-center justify-center text-[11px] font-semibold leading-none disabled:opacity-30"
+          >
+            +
+          </button>
+        </div>
+
+        {onClose && (
           <button
             type="button"
             onClick={onClose}
             title={`Close ${title}`}
-            className="rt-btn panel-no-drag ml-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
+            className="rt-btn panel-no-drag flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
           >
             <Icon name="close" size={13} aria-label={`Close ${title}`} />
           </button>
-        ) : null}
+        )}
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+
+      {/* Content: font size applied here so the panel chrome stays fixed size.
+          overflow-auto allows scrolling enlarged content without breaking bounds. */}
+      <div
+        className="min-h-0 flex-1 overflow-auto"
+        style={fontSize !== 100 ? { fontSize: `${fontSize}%` } : undefined}
+      >
+        {children}
+      </div>
     </div>
   );
 }

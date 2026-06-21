@@ -19,24 +19,17 @@ import {
 } from "../lib/workspaceLayout";
 
 interface WorkspaceLayoutState {
-  /** Visible panels, in render order. */
   panels: WorkspacePanel[];
-  /**
-   * Grid coordinates/sizes for each panel. At runtime these hold the exact
-   * items react-grid-layout emits (enriched with its own bookkeeping fields);
-   * persistence strips them back to the serializable schema via `partialize`.
-   */
   grid: WorkspaceGridItem[];
-  /** Replace the grid after a drag/resize (called from onLayoutChange). */
+  /** Per-panel font size as a percentage (80–150, default 100). */
+  panelFontSizes: Record<string, number>;
+
   setGrid: (grid: WorkspaceGridItem[]) => void;
-  /** Show or hide a panel by kind. */
   togglePanel: (kind: PanelKind) => void;
-  /** Remove a panel by id (panel close button). */
   closePanel: (id: string) => void;
-  /** Restore the default arrangement. */
   resetLayout: () => void;
-  /** Apply an arbitrary panels + grid snapshot (used by preset loading). */
   loadLayout: (panels: WorkspacePanel[], grid: WorkspaceGridItem[]) => void;
+  setPanelFontSize: (id: string, size: number) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceLayoutState>()(
@@ -46,6 +39,7 @@ export const useWorkspaceStore = create<WorkspaceLayoutState>()(
       return {
         panels: defaults.panels,
         grid: defaults.grid,
+        panelFontSizes: {},
         setGrid: (grid) => set({ grid }),
         togglePanel: (kind) =>
           set((state) => {
@@ -104,6 +98,8 @@ export const useWorkspaceStore = create<WorkspaceLayoutState>()(
         },
         loadLayout: (panels, grid) =>
           set({ panels, grid: grid.map(sanitizeGridItem) }),
+        setPanelFontSize: (id, size) =>
+          set((s) => ({ panelFontSizes: { ...s.panelFontSizes, [id]: Math.max(70, Math.min(150, size)) } })),
       };
     },
     {
