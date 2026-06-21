@@ -9,6 +9,7 @@ import {
   WORKSPACE_LAYOUT_VERSION,
   createDefaultWorkspaceLayout,
   findFreeSlot,
+  fitIntoColumn,
   isWorkspaceGridArray,
   isWorkspacePanelArray,
   sanitizeGridItem,
@@ -48,35 +49,46 @@ export const useWorkspaceStore = create<WorkspaceLayoutState>()(
           set((state) => {
             const id = PANEL_IDS[kind];
             const isVisible = state.panels.some((panel) => panel.id === id);
+
             if (isVisible) {
+              // Hiding: remove the panel and let remaining column siblings
+              // keep their positions (user can reset to rebalance).
               return {
                 panels: state.panels.filter((panel) => panel.id !== id),
                 grid: state.grid.filter((item) => item.i !== id),
               };
             }
+
+            // Showing: look for genuinely free space first. If findFreeSlot
+            // finds a clean open slot, use it. Only when the grid is fully
+            // occupied (slot is already taken) fall back to fitIntoColumn,
+            // which resizes the panel's natural column to share height.
             const size = DEFAULT_PANEL_SIZE[kind];
             const w = Math.min(size.w, GRID_COLS);
             const h = size.h;
-            // Find an empty gap in the visible grid instead of stacking
-            // below the last row — that could push the panel off screen
-            // where the user would never see it appear.
-            const { x, y } = findFreeSlot(state.grid, w, h);
+            const slot = findFreeSlot(state.grid, w, h);
 
-            const item: WorkspaceGridItem = {
-              i: id,
-              x,
-              y,
-              w,
-              h,
-              minW: size.minW,
-              minH: size.minH,
-            };
+            const slotOccupied = state.grid.some(
+              (item) =>
+                slot.x < item.x + item.w &&
+                slot.x + w > item.x &&
+                slot.y < item.y + item.h &&
+                slot.y + h > item.y,
+            );
+
+            const newGrid = slotOccupied
+              ? fitIntoColumn(state.grid, id, kind)
+              : [
+                  ...state.grid,
+                  { i: id, x: slot.x, y: slot.y, w, h, minW: size.minW, minH: size.minH },
+                ];
+
             return {
               panels: [
                 ...state.panels,
                 { id, kind, title: PANEL_META[kind].label },
               ],
-              grid: [...state.grid, item],
+              grid: newGrid,
             };
           }),
         closePanel: (id) =>

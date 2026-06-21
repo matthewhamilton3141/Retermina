@@ -449,8 +449,8 @@ body {
   border: var(--rt-border-width) solid var(--rt-border);
   border-radius: var(--rt-radius);
   box-shadow: var(--rt-shadow-panel);
-  -webkit-backdrop-filter: var(--rt-backdrop);
-  backdrop-filter: var(--rt-backdrop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .rt-menu-item {
@@ -478,8 +478,8 @@ body {
 .rt-irisbar {
   background-color: var(--rt-surface-strong);
   border-top: var(--rt-border-width) solid var(--rt-border);
-  -webkit-backdrop-filter: var(--rt-backdrop);
-  backdrop-filter: var(--rt-backdrop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Text input (Iris query field). */

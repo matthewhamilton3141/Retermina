@@ -116,24 +116,25 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
  * of slack keeps every panel actually resizable both wider/taller and
  * narrower/shorter from its default size.
  */
+// Grid is divided into three natural columns:
+//   Left  (x 0–2,  w=3): Explorer / Localhost
+//   Centre(x 3–7,  w=5): Code / Live Preview
+//   Right (x 8–11, w=4): Terminal / Claude Code
+//
+// DEFAULT_PANEL_SIZE entries are sized to fit their column so that
+// findFreeSlot drops a re-added panel back into the correct column
+// rather than overshooting and falling back to (0,0).
 export const DEFAULT_PANEL_SIZE: Record<
   PanelKind,
   Required<Pick<WorkspaceGridItem, "w" | "h" | "minW" | "minH">>
 > = {
-  //           w   h   minW  minH
-  terminal:    { w: 8, h: 5, minW: 3, minH: 2 },
-  fileExplorer:{ w: 3, h: 5, minW: 2, minH: 2 },
-  codeView:    { w: 8, h: 4, minW: 3, minH: 2 },
-  localhost:   { w: 3, h: 4, minW: 2, minH: 2 },
-  // A real working terminal pane, not a cramped sidebar strip, sized to dock
-  // comfortably alongside Terminal, Code View, or Localhost. The default
-  // 4-panel layout fully tiles the grid (by design — see the resize-cap note
-  // above), so toggling on a 5th panel of any size lands via findFreeSlot's
-  // overlap fallback at first; the user drags it into place once, same as
-  // adding any other panel beyond the default four.
-  claudeCode:  { w: 4, h: 4, minW: 3, minH: 2 },
-  // Live Preview needs reasonable height for the iframe to show content.
-  livePreview: { w: 6, h: 6, minW: 3, minH: 3 },
+  //              w   h   minW  minH
+  terminal:    { w: 4, h: 5, minW: 3, minH: 2 },  // right column, half-height
+  fileExplorer:{ w: 3, h: 5, minW: 2, minH: 2 },  // left column
+  codeView:    { w: 5, h: 8, minW: 3, minH: 2 },  // centre column
+  localhost:   { w: 3, h: 4, minW: 2, minH: 2 },  // left column, bottom
+  claudeCode:  { w: 4, h: 5, minW: 3, minH: 2 },  // right column, half-height
+  livePreview: { w: 5, h: 6, minW: 3, minH: 3 },  // centre column
 };
 
 /**
@@ -152,15 +153,19 @@ const DEFAULT_VISIBLE_PANEL_KINDS: readonly PanelKind[] = [
 ];
 
 /**
- * Default layout: a narrow rail on the left (Explorer on top, the more
- * lightweight Localhost tracker beneath it — both share Explorer's width
- * rather than spanning the full right side), with Terminal and the new Code
- * panel filling the wider right-hand area Localhost used to occupy.
+ * Default layout — three-column design matching the intended workspace:
  *
- * Columns: 3 (rail) + 8 (main) = 11 of 12 — one column of right-edge slack so
- * Terminal/Code can still grow wider via the `e`/`se` handles.
- * Rows: rail splits 5/5 of 10; main splits 5 (terminal) + 4 (code) of 9 rows,
- * leaving one row of bottom-edge slack on the main column too.
+ *   ┌─────────────┬──────────────────┬─────────────┐
+ *   │  Explorer   │                  │             │
+ *   │  (3 × 6)    │   Code View      │  Terminal   │
+ *   ├─────────────┤   (5 × 10)       │  (4 × 5)    │
+ *   │  Localhost  │                  ├─────────────┤
+ *   │  (3 × 4)    │                  │  [open]     │
+ *   └─────────────┴──────────────────┴─────────────┘
+ *     cols 0–2        cols 3–7          cols 8–11
+ *
+ * The right column (8–11) is left half-occupied so Claude Code slots in at
+ * (8, 5) when toggled on — findFreeSlot picks it up automatically.
  */
 export function createDefaultWorkspaceLayout(): WorkspaceLayout {
   return {
@@ -171,24 +176,82 @@ export function createDefaultWorkspaceLayout(): WorkspaceLayout {
       title: PANEL_META[kind].label,
     })),
     grid: [
-      // Left rail, top — file explorer
-      { i: PANEL_IDS.fileExplorer, x: 0, y: 0, w: 3, h: 5, minW: 2, minH: 2 },
-      // Left rail, bottom — localhost tracker (now the same width as Explorer)
-      { i: PANEL_IDS.localhost,    x: 0, y: 5, w: 3, h: 4, minW: 2, minH: 2 },
-      // Main column, top — terminal (the space Localhost used to occupy)
-      { i: PANEL_IDS.terminal,     x: 3, y: 0, w: 8, h: 5, minW: 3, minH: 2 },
-      // Main column, bottom — code view
-      { i: PANEL_IDS.codeView,     x: 3, y: 5, w: 8, h: 4, minW: 3, minH: 2 },
+      // Left column — explorer fills top 60 %, localhost the bottom 40 %
+      { i: PANEL_IDS.fileExplorer, x: 0, y: 0, w: 3, h: 6, minW: 2, minH: 2 },
+      { i: PANEL_IDS.localhost,    x: 0, y: 6, w: 3, h: 4, minW: 2, minH: 2 },
+      // Centre column — code view spans full height
+      { i: PANEL_IDS.codeView,     x: 3, y: 0, w: 5, h: 10, minW: 3, minH: 2 },
+      // Right column — terminal takes the top half; bottom half left free
+      // for Claude Code to drop into when toggled on
+      { i: PANEL_IDS.terminal,     x: 8, y: 0, w: 4, h: 5, minW: 3, minH: 2 },
     ],
   };
 }
 
 /**
+ * Preferred column for each panel kind in the 3-column layout.
+ * Used by fitIntoColumn so togglePanel always returns a panel to its
+ * natural column instead of hunting for arbitrary free space.
+ */
+export const PANEL_COLUMN: Record<PanelKind, { x: number; w: number }> = {
+  fileExplorer: { x: 0, w: 3 },
+  localhost:    { x: 0, w: 3 },
+  codeView:     { x: 3, w: 5 },
+  livePreview:  { x: 3, w: 5 },
+  terminal:     { x: 8, w: 4 },
+  claudeCode:   { x: 8, w: 4 },
+};
+
+/**
+ * Add a panel to its preferred column, resizing all panels in that column
+ * so they share the full column height equally. This is the primary placement
+ * strategy for togglePanel — panels always land in the right column and the
+ * existing occupants simply shrink to make room, with no position hunting.
+ */
+export function fitIntoColumn(
+  grid: readonly WorkspaceGridItem[],
+  newId: string,
+  kind: PanelKind,
+): WorkspaceGridItem[] {
+  const col = PANEL_COLUMN[kind];
+  const size = DEFAULT_PANEL_SIZE[kind];
+
+  // Panels already in this column, sorted top-to-bottom for stable stacking.
+  const inColumn = [...grid]
+    .filter((item) => item.x >= col.x && item.x < col.x + col.w && item.i !== newId)
+    .sort((a, b) => a.y - b.y);
+
+  const totalPanels = inColumn.length + 1;
+  const hEach = Math.max(size.minH, Math.floor(GRID_ROWS / totalPanels));
+  // The last slot gets whatever rows remain so the column is fully filled.
+  const hLast = Math.max(size.minH, GRID_ROWS - hEach * (totalPanels - 1));
+
+  const resized: WorkspaceGridItem[] = inColumn.map((item, idx) => ({
+    ...item,
+    x: col.x,
+    w: col.w,
+    y: idx * hEach,
+    h: idx === inColumn.length - 1 && totalPanels > 1 ? hEach : hEach,
+  }));
+
+  const newItem: WorkspaceGridItem = {
+    i: newId,
+    x: col.x,
+    y: inColumn.length * hEach,
+    w: col.w,
+    h: hLast,
+    minW: size.minW,
+    minH: size.minH,
+  };
+
+  // Replace old column items with resized versions, append the new panel.
+  const colIds = new Set(inColumn.map((item) => item.i));
+  return [...grid.filter((item) => !colIds.has(item.i)), ...resized, newItem];
+}
+
+/**
  * Find a good position for a newly toggled-on panel.
- *
- * Strategy: scan the grid for the first 4-wide gap in the top half of the
- * grid. If none is found, place at (0, 0) — the user can move it. We never
- * stack panels below the visible rows, which would make them unreachable.
+ * @deprecated Prefer fitIntoColumn — this is kept for the reconcileWorkspaceLayout path.
  */
 export function findFreeSlot(
   grid: readonly WorkspaceGridItem[],
@@ -210,7 +273,6 @@ export function findFreeSlot(
     }
   }
 
-  // Fall back to top-left; the panel will overlap but is immediately movable.
   return { x: 0, y: 0 };
 }
 
