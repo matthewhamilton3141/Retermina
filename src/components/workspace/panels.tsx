@@ -1,7 +1,8 @@
-import { memo, type ReactNode } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 
 import Icon from "../Icon";
 import { useEditorStore } from "../../store/editor";
+import { getClaudeTokenUsage, type ClaudeTokenUsage } from "../../lib/fs";
 import type { PanelKind } from "../../lib/workspaceLayout";
 import DiffViewer from "./DiffViewer";
 import FileExplorerPanel from "./FileExplorerPanel";
@@ -166,19 +167,103 @@ function CodeViewPanel() {
 /* Claude Code                                                                */
 /* -------------------------------------------------------------------------- */
 
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
 const ClaudeCodePanel = memo(function ClaudeCodePanel({
   cwd,
 }: {
   cwd: string | null;
 }) {
+  const [usage, setUsage] = useState<ClaudeTokenUsage | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!cwd) return;
+
+    const load = () =>
+      getClaudeTokenUsage(cwd)
+        .then((u) => setUsage(u))
+        .catch(() => {});
+
+    load();
+    // Refresh every 30 s — Claude generates tokens slowly enough that this is
+    // more than sufficient to stay current mid-session.
+    const id = window.setInterval(load, 30_000);
+    return () => window.clearInterval(id);
+  }, [cwd]);
+
+  const hasData = usage && (usage.outputTokens > 0 || usage.sessionCount > 0);
+
   return (
-    <div className="rt-terminal-surface h-full w-full p-2">
-      <TerminalViewport
-        cwd={cwd}
-        className="h-full w-full"
-        initialCommand="claude"
-        registerWithBus={false}
-      />
+    <div className="rt-terminal-surface flex h-full w-full flex-col">
+      {/* Stats strip */}
+      {cwd && (
+        <div className="rt-divider-b shrink-0">
+          {hasData ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
+              title={expanded ? "Hide breakdown" : "Show token breakdown"}
+            >
+              <Icon name="bot" size={11} className="rt-accent-text shrink-0" />
+              <span className="rt-text-muted flex-1 text-[10px]">
+                <span className="font-mono">{formatTokens(usage!.outputTokens)}</span>
+                <span className="rt-text-faint"> output · </span>
+                <span className="font-mono">{usage!.sessionCount}</span>
+                <span className="rt-text-faint"> {usage!.sessionCount === 1 ? "session" : "sessions"} · </span>
+                <span className="font-mono">~${usage!.estimatedCostUsd.toFixed(2)}</span>
+              </span>
+              <Icon
+                name={expanded ? "chevronDown" : "chevronRight"}
+                size={10}
+                className="rt-text-faint shrink-0"
+              />
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 px-2.5 py-1.5">
+              <Icon name="bot" size={11} className="rt-text-faint shrink-0" />
+              <span className="rt-text-faint text-[10px]">No usage data yet for this project</span>
+            </div>
+          )}
+
+          {/* Expanded breakdown */}
+          {expanded && hasData && (
+            <div className="border-t border-[var(--rt-border)] px-2.5 pb-2 pt-1.5">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                {[
+                  ["Input",        usage!.inputTokens],
+                  ["Output",       usage!.outputTokens],
+                  ["Cache read",   usage!.cacheReadTokens],
+                  ["Cache write",  usage!.cacheCreationTokens],
+                ].map(([label, val]) => (
+                  <div key={label as string} className="flex items-baseline justify-between gap-1">
+                    <span className="rt-text-faint text-[9px] uppercase tracking-wide">{label}</span>
+                    <span className="rt-text-muted font-mono text-[10px]">{formatTokens(val as number)}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="rt-text-faint mt-1.5 text-[9px] leading-relaxed">
+                Approximate cost based on Claude Sonnet 4 pricing. Cache reads are billed at 10× less than input.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Terminal */}
+      <div className="min-h-0 flex-1 p-2">
+        <TerminalViewport
+          cwd={cwd}
+          className="h-full w-full"
+          initialCommand="claude"
+          registerWithBus={false}
+        />
+      </div>
     </div>
   );
 });

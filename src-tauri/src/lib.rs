@@ -1,3 +1,4 @@
+mod claude_stats;
 mod fs;
 mod iris;
 mod localhost;
@@ -36,7 +37,8 @@ pub fn run() {
             fs::delete_path,
             fs::suggest_directories,
             fs::validate_directory,
-            terminal_import::get_terminal_cwd
+            terminal_import::get_terminal_cwd,
+            claude_stats::get_claude_token_usage
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -67,3 +67,21 @@ export async function suggestDirectories(partialPath: string): Promise<string[]>
 export async function validateDirectory(path: string): Promise<boolean> {
   return invoke<boolean>("validate_directory", { path });
 }
+
+export interface ClaudeTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  sessionCount: number;
+  /** Approximate cost in USD (Claude Sonnet 4 pricing). */
+  estimatedCostUsd: number;
+}
+
+/**
+ * Return cumulative token usage for all Claude Code sessions in `cwd`.
+ * Returns zeroed totals when no history exists for the project.
+ */
+export async function getClaudeTokenUsage(cwd: string): Promise<ClaudeTokenUsage> {
+  return invoke<ClaudeTokenUsage>("get_claude_token_usage", { cwd });
+}
