@@ -53,12 +53,68 @@ Panels snap to the grid, resize from all eight edges, and resolve collisions wit
 Iris is a **local, tokenless** command bar at the bottom of the workspace. It requires no API keys, no network connection, and no LLM inference.
 
 **How it works:**
-- A static macro catalog of 30+ commands is filtered at query time against `IrisCtx` — a context object that merges live Git state (branch, ahead/behind, staged/unstaged counts) with the currently open file path.
-- **Fuzzy matching** scores each macro's title and keywords: prefix match → 100 pts, substring → 60 pts, subsequence → 25 pts. Macros with a score of 0 are excluded.
-- **Contextual gating** — macros declare `available(ctx): boolean` guards. "Push" only appears when commits are ahead of upstream. "Diff staged" only appears when staged changes exist. "Reveal in Finder" only appears when a file is open.
-- A "Run as typed" fallback always appears for non-empty queries so any raw shell command is one Enter away.
+- A static macro catalog is filtered at query time against `IrisCtx` — a context object that merges live Git state (branch, ahead/behind counts, staged/unstaged file counts) with the currently open file path.
+- **Fuzzy matching** scores each macro's title and keywords: prefix match → 100 pts, substring → 60 pts, subsequence → 25 pts. Macros scoring 0 are excluded.
+- **Contextual gating** — every macro declares `available(ctx): boolean`. "Push" only surfaces when commits are ahead of upstream. "Diff staged" only appears when staged changes exist. File commands only appear when a file is open in the Code panel.
+- A **"Run as typed"** fallback always appears for non-empty queries so any raw shell command is one Enter away.
+- **Navigation:** `↑ ↓` to move through suggestions, `Enter` or `Tab` to run, `Esc` to dismiss.
 
-**Command groups:** Git (sync, push, pull, fetch, commit, stash, branch, log, diff, reset), npm (install, dev, build, test, lint), Shell (ls, pwd, du, find, ps), File (reveal in Finder, open, copy path).
+#### Git commands
+
+| Keywords | Command | When available |
+|---|---|---|
+| `sync`, `rebase`, `update` | `git pull --rebase && git push` | repo, has upstream, ahead or behind |
+| `push`, `upload`, `publish` | `git push` | repo, has upstream, commits ahead |
+| `publish`, `set upstream` | `git push -u origin <branch>` | repo, no upstream set |
+| `pull`, `download`, `merge` | `git pull` | repo, has upstream, commits behind |
+| `fetch`, `prune` | `git fetch --all --prune` | in any repo |
+| `commit`, `commit all`, `ci` | `git add -A && git commit` | repo, uncommitted changes |
+| `commit staged`, `ci` | `git commit` | repo, staged changes exist |
+| `stage`, `add`, `git add` | `git add -A` | repo, unstaged or untracked files |
+| `status`, `st`, `what changed` | `git status` | in any repo |
+| `diff`, `changes`, `delta` | `git diff` | repo, unstaged changes |
+| `diff staged`, `cached` | `git diff --staged` | repo, staged changes exist |
+| `log`, `history`, `graph` | `git log --oneline --graph -20` | in any repo |
+| `stash`, `shelve` | `git stash push -u` | repo, uncommitted changes |
+| `stash pop`, `unstash`, `pop` | `git stash pop` | in any repo |
+| `stash list`, `stashes` | `git stash list` | in any repo |
+| `branch`, `branches` | `git branch -a` | in any repo |
+| `remote`, `remotes`, `origin` | `git remote -v` | in any repo |
+| `init`, `new repo` | `git init` | **not** in a repo |
+| `discard`, `restore` *(hidden)* | `git restore .` | repo, unstaged changes |
+| `undo`, `undo commit` *(hidden)* | `git reset --soft HEAD~1` | in any repo |
+| `amend`, `fix commit` *(hidden)* | `git commit --amend --no-edit` | in any repo |
+
+> Hidden commands only appear when explicitly typed — they never show in the default empty-query list.
+
+#### npm commands
+
+| Keywords | Command |
+|---|---|
+| `install`, `npm i`, `dependencies` | `npm install` |
+| `dev`, `start`, `serve`, `vite` | `npm run dev` |
+| `build`, `bundle`, `compile` | `npm run build` |
+| `test`, `jest`, `vitest`, `spec` | `npm test` |
+| `lint`, `eslint`, `check` | `npm run lint` |
+
+#### Shell commands
+
+| Keywords | Command |
+|---|---|
+| `ls`, `list`, `dir`, `files` | `ls -la` |
+| `clear`, `cls` | `clear` |
+| `pwd`, `where`, `cwd` | `pwd` |
+| `du`, `disk`, `size`, `folder size` | `du -sh ./* \| sort -h` |
+| `find`, `typescript`, `javascript`, `source` | `find` for all TS/JS/TSX/JSX, excluding `node_modules` and `dist` |
+| `ps`, `processes`, `node`, `running` | `ps aux` filtered for node/npm/vite/pnpm |
+
+#### File commands *(require a file open in the Code panel)*
+
+| Keywords | Command |
+|---|---|
+| `finder`, `reveal`, `locate` | `open -R "<path>"` — opens Finder with file selected |
+| `open`, `open file`, `default app` | `open "<path>"` — opens with default macOS application |
+| `copy path`, `clipboard`, `path` | `echo -n "<path>" \| pbcopy` — copies path to clipboard |
 
 ### Semantic theming engine
 
