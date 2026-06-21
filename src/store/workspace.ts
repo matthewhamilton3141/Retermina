@@ -35,6 +35,8 @@ interface WorkspaceLayoutState {
   closePanel: (id: string) => void;
   /** Restore the default arrangement. */
   resetLayout: () => void;
+  /** Apply an arbitrary panels + grid snapshot (used by preset loading). */
+  loadLayout: (panels: WorkspacePanel[], grid: WorkspaceGridItem[]) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceLayoutState>()(
@@ -100,6 +102,8 @@ export const useWorkspaceStore = create<WorkspaceLayoutState>()(
           const fresh = createDefaultWorkspaceLayout();
           set({ panels: fresh.panels, grid: fresh.grid });
         },
+        loadLayout: (panels, grid) =>
+          set({ panels, grid: grid.map(sanitizeGridItem) }),
       };
     },
     {

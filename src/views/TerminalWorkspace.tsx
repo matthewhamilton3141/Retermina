@@ -2,6 +2,7 @@ import Icon from "../components/Icon";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import CommandMenu from "../components/workspace/CommandMenu";
 import IrisBar from "../components/workspace/IrisBar";
+import PresetsMenu from "../components/workspace/PresetsMenu";
 import WorkspaceLayout from "../components/workspace/WorkspaceLayout";
 import { prettyPath } from "../lib/format";
 import { PANEL_KINDS, PANEL_META } from "../lib/workspaceLayout";
@@ -72,6 +73,8 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
             <Icon name="sync" size={14} />
             <span className="hidden sm:inline">Reset</span>
           </button>
+          <div className="rt-divider mx-1 h-5 w-px" />
+          <PresetsMenu />
           <div className="rt-divider mx-1 h-5 w-px" />
           <CommandMenu cwd={cwd} />
           <div className="rt-divider mx-1 h-5 w-px" />
