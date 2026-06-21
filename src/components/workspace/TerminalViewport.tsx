@@ -241,11 +241,11 @@ export function TerminalViewport({
     <div ref={dropZoneRef} className={`relative ${className ?? ""}`}>
       {/* xterm canvas fills the wrapper */}
       <div ref={containerRef} className="absolute inset-0" />
-      {/* Drop overlay */}
+      {/* Drop overlay — shown for both files and folders */}
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded"
           style={{ background: "var(--rt-accent-soft)", border: "2px dashed var(--rt-accent)" }}>
-          <Icon name="file" size={22} className="rt-accent-text" />
+          <Icon name="folderOpen" size={22} className="rt-accent-text" />
           <p className="rt-accent-text text-xs font-medium">Drop to paste path</p>
         </div>
       )}

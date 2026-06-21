@@ -2,18 +2,16 @@
  * useTauriFileDrop — per-element Tauri file-drop listener.
  *
  * Tauri's `onDragDropEvent` fires globally for the whole webview, so each
- * consumer of this hook checks whether the cursor was actually over its own
- * DOM element before acting. Physical pixel positions from the event are
- * converted to CSS logical pixels via `window.devicePixelRatio` so
- * `elementFromPoint` works correctly on Retina displays.
+ * consumer checks whether the cursor is over its own element before acting.
+ * Physical pixel positions are converted to CSS logical pixels via
+ * `window.devicePixelRatio` so `elementFromPoint` works on Retina displays.
+ *
+ * Works for both files and directories — Tauri includes folder paths in the
+ * `paths` array exactly like file paths.
  *
  * Usage:
  *   const dropRef = useRef<HTMLDivElement>(null);
  *   const { isDragOver } = useTauriFileDrop(dropRef, (paths) => { ... });
- *
- * Multiple independent drop zones (e.g. three terminal panels) can each use
- * this hook simultaneously — only the one whose element is under the cursor
- * at drop time will fire `onDrop`.
  */
 
 import { useEffect, useRef, useState, type RefObject } from "react";
@@ -28,6 +26,9 @@ export function useTauriFileDrop(
   onDropRef.current = onDrop;
 
   useEffect(() => {
+    // Guard against the component unmounting before the async listener
+    // promise resolves — if it does, call unlisten() immediately.
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
 
     function hitTest(physX: number, physY: number): boolean {
@@ -57,10 +58,15 @@ export function useTauriFileDrop(
         }
       })
       .then((fn) => {
-        unlisten = fn;
+        if (cancelled) {
+          fn(); // component already unmounted — stop listening immediately
+        } else {
+          unlisten = fn;
+        }
       });
 
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, [zoneRef]);
