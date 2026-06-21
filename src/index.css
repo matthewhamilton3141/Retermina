@@ -93,54 +93,57 @@
   --rt-resize-handle: rgba(139, 92, 246, 0.5);
 }
 
-/* Transparent Glass — frosted panels over a blurred app background. */
+/* Transparent Glass — Apple-style translucency.
+ *
+ * Only the app shell background is frosted (blurred desktop shows through).
+ * Every surface on top — panels, toolbar, menus, Iris bar — is fully solid
+ * so content stays readable. This matches how macOS vibrancy works: the
+ * window background is the translucent layer, everything else sits on top. */
 [data-theme="glass"] {
   color-scheme: light;
 
-  /* App shell background: semi-transparent so desktop shows through.
-   * Tauri window needs transparent:true for this to reach the desktop;
-   * without it, the bg color is what's blurred, which still looks glassy. */
-  --rt-bg: rgba(240, 242, 246, 0.65);
+  /* Semi-transparent window background — the frosted layer. */
+  --rt-bg: rgba(236, 238, 243, 0.72);
   --rt-bg-image: none;
 
-  /* Panels: frosted-glass — semi-transparent white so blurred bg shows through. */
-  --rt-surface: rgba(255, 255, 255, 0.58);
-  --rt-surface-strong: rgba(255, 255, 255, 0.72);
-  --rt-surface-hover: rgba(0, 0, 0, 0.06);
-  --rt-subsurface: rgba(240, 242, 246, 0.5);
+  /* All content surfaces: fully solid. */
+  --rt-surface: #f5f6f8;
+  --rt-surface-strong: #ffffff;
+  --rt-surface-hover: rgba(0, 0, 0, 0.05);
+  --rt-subsurface: #eceef2;
 
-  --rt-border: rgba(120, 124, 132, 0.2);
+  --rt-border: rgba(0, 0, 0, 0.08);
   --rt-border-width: 1px;
 
-  --rt-text: #2a2c30;
+  --rt-text: #1c1e21;
   --rt-text-muted: #6b6e75;
   --rt-text-faint: #9a9ca3;
 
   --rt-accent: #4a6fa5;
-  --rt-accent-soft: rgba(74, 111, 165, 0.14);
+  --rt-accent-soft: rgba(74, 111, 165, 0.12);
 
   --rt-radius-sm: 0.6rem;
   --rt-radius: 0.9rem;
   --rt-radius-lg: 1.25rem;
 
-  --rt-shadow-panel: 0 8px 32px -6px rgba(0, 0, 0, 0.14),
-                     0 2px 8px -2px rgba(0, 0, 0, 0.08);
+  --rt-shadow-panel: 0 2px 12px rgba(0, 0, 0, 0.08),
+                     0 1px 3px  rgba(0, 0, 0, 0.06);
   --rt-btn-shadow: none;
-  /* Every surface blurs what's behind it. */
-  --rt-backdrop: blur(16px) saturate(160%);
+  /* No per-surface blur — surfaces are solid, only the shell background blurs. */
+  --rt-backdrop: none;
   --rt-ring: rgba(74, 111, 165, 0.45);
 
   --rt-icon-stroke: 1.75;
 
-  --rt-terminal-bg: rgba(245, 247, 250, 0.8);
+  --rt-terminal-bg: #f0f2f5;
   --rt-grid-placeholder: #4a6fa5;
-  --rt-resize-handle: rgba(120, 124, 132, 0.5);
+  --rt-resize-handle: rgba(0, 0, 0, 0.2);
 }
 
-/* App shell: heavy blur behind the whole UI. */
+/* App shell: frosted blur behind all the solid UI surfaces. */
 [data-theme="glass"] .rt-app {
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%) brightness(1.04);
+  backdrop-filter: blur(32px) saturate(200%) brightness(1.04);
 }
 
 /* Solid popouts — menus and the Iris bar must be fully opaque so they float
