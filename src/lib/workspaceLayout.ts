@@ -62,7 +62,7 @@ export interface PanelMeta {
 }
 
 /** Current schema version; bump when the persisted shape changes. */
-export const WORKSPACE_LAYOUT_VERSION = 1;
+export const WORKSPACE_LAYOUT_VERSION = 2;
 
 /**
  * Number of columns the grid snaps to.
@@ -137,35 +137,25 @@ export const DEFAULT_PANEL_SIZE: Record<
   livePreview: { w: 5, h: 6, minW: 3, minH: 3 },  // centre column
 };
 
-/**
- * Panel kinds present on first launch. `claudeCode` is deliberately excluded:
- * it auto-runs the `claude` CLI as soon as its terminal connects (see the
- * panel's renderer in panels.tsx), and silently launching an external binary
- * the user may not have installed isn't something a default layout should do
- * unprompted. It still gets a toolbar toggle (PANEL_KINDS drives that), so
- * docking it is one click away — it's opt-in, not hidden.
- */
 const DEFAULT_VISIBLE_PANEL_KINDS: readonly PanelKind[] = [
   "fileExplorer",
   "terminal",
   "codeView",
   "localhost",
+  "claudeCode",
 ];
 
 /**
  * Default layout — three-column design matching the intended workspace:
  *
  *   ┌─────────────┬──────────────────┬─────────────┐
- *   │  Explorer   │                  │             │
- *   │  (3 × 6)    │   Code View      │  Terminal   │
- *   ├─────────────┤   (5 × 10)       │  (4 × 5)    │
- *   │  Localhost  │                  ├─────────────┤
- *   │  (3 × 4)    │                  │  [open]     │
+ *   │  Explorer   │                  │  Terminal   │
+ *   │  (3 × 6)    │   Code View      │  (4 × 5)    │
+ *   ├─────────────┤   (5 × 10)       ├─────────────┤
+ *   │  Localhost  │                  │ Claude Code │
+ *   │  (3 × 4)    │                  │  (4 × 5)    │
  *   └─────────────┴──────────────────┴─────────────┘
  *     cols 0–2        cols 3–7          cols 8–11
- *
- * The right column (8–11) is left half-occupied so Claude Code slots in at
- * (8, 5) when toggled on — findFreeSlot picks it up automatically.
  */
 export function createDefaultWorkspaceLayout(): WorkspaceLayout {
   return {
@@ -181,9 +171,9 @@ export function createDefaultWorkspaceLayout(): WorkspaceLayout {
       { i: PANEL_IDS.localhost,    x: 0, y: 6, w: 3, h: 4, minW: 2, minH: 2 },
       // Centre column — code view spans full height
       { i: PANEL_IDS.codeView,     x: 3, y: 0, w: 5, h: 10, minW: 3, minH: 2 },
-      // Right column — terminal takes the top half; bottom half left free
-      // for Claude Code to drop into when toggled on
+      // Right column — terminal top half, Claude Code bottom half
       { i: PANEL_IDS.terminal,     x: 8, y: 0, w: 4, h: 5, minW: 3, minH: 2 },
+      { i: PANEL_IDS.claudeCode,   x: 8, y: 5, w: 4, h: 5, minW: 3, minH: 2 },
     ],
   };
 }

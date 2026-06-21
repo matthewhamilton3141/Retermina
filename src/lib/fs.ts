@@ -52,3 +52,18 @@ export async function createDir(path: string): Promise<void> {
 export async function createFile(path: string): Promise<void> {
   return invoke<void>("create_file", { path });
 }
+
+/**
+ * Return subdirectories matching `partialPath`. Hidden directories are
+ * excluded. Results are sorted and capped at 15 entries.
+ */
+export async function suggestDirectories(partialPath: string): Promise<string[]> {
+  return invoke<string[]>("suggest_directories", { partialPath });
+}
+
+/**
+ * Return true if `path` exists on the filesystem and is a directory.
+ */
+export async function validateDirectory(path: string): Promise<boolean> {
+  return invoke<boolean>("validate_directory", { path });
+}

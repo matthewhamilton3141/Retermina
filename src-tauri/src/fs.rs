@@ -93,6 +93,57 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("Cannot write file: {e}"))
 }
 
+/// Return subdirectories of the parent component of `partial_path` whose
+/// names start with the typed fragment. Hidden directories are excluded.
+/// Results are sorted and capped at 15 entries.
+#[tauri::command]
+pub fn suggest_directories(partial_path: String) -> Vec<String> {
+    if partial_path.is_empty() {
+        return Vec::new();
+    }
+
+    let input = std::path::Path::new(&partial_path);
+    let sep = std::path::MAIN_SEPARATOR;
+
+    // If the path ends with a separator the user wants children of that dir.
+    let trailing_sep = partial_path.ends_with(sep) || partial_path.ends_with('/');
+
+    let (parent, prefix): (&std::path::Path, &str) = if trailing_sep {
+        (input, "")
+    } else {
+        let p = input.parent().unwrap_or_else(|| std::path::Path::new("/"));
+        let stem = input.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        (p, stem)
+    };
+
+    let Ok(read_dir) = std::fs::read_dir(parent) else {
+        return Vec::new();
+    };
+
+    let prefix_lower = prefix.to_lowercase();
+
+    let mut results: Vec<String> = read_dir
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().ok().map(|t| t.is_dir()).unwrap_or(false))
+        .filter(|e| {
+            let raw = e.file_name();
+            let name = raw.to_string_lossy();
+            !name.starts_with('.') && name.to_lowercase().starts_with(&prefix_lower)
+        })
+        .filter_map(|e| e.path().to_str().map(|s| s.to_string()))
+        .take(15)
+        .collect();
+
+    results.sort();
+    results
+}
+
+/// Return `true` if `path` exists on the filesystem and is a directory.
+#[tauri::command]
+pub fn validate_directory(path: String) -> bool {
+    std::path::Path::new(&path).is_dir()
+}
+
 /// Read a UTF-8 text file. Returns an error for binary files, missing files,
 /// or files exceeding the 5 MB cap.
 #[tauri::command]

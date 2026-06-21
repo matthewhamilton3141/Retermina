@@ -41,9 +41,14 @@ export const LivePreviewPanel = memo(function LivePreviewPanel() {
       .finally(() => setDetecting(false));
   }, []);
 
-  // Sync window-open state on mount and whenever the panel re-focuses.
+  // Sync window-open state on mount and poll so we notice if the user closes
+  // the native window from outside the panel (e.g. via the OS close button).
   useEffect(() => {
-    isPreviewOpen().then(setWindowOpen);
+    let active = true;
+    const sync = () => isPreviewOpen().then((open) => { if (active) setWindowOpen(open); });
+    sync();
+    const id = window.setInterval(sync, 1500);
+    return () => { active = false; window.clearInterval(id); };
   }, []);
 
   const launch = useCallback(async () => {
@@ -88,7 +93,7 @@ export const LivePreviewPanel = memo(function LivePreviewPanel() {
           <button
             type="submit"
             disabled={launching || !inputValue.trim()}
-            title={windowOpen ? "Reopen / navigate" : "Launch preview window"}
+            title={windowOpen ? "Reopen at this URL" : "Launch preview window"}
             className="rt-btn-outline flex h-6 shrink-0 items-center gap-1 px-2 text-[11px] font-medium disabled:opacity-50"
           >
             {launching ? (
@@ -96,34 +101,33 @@ export const LivePreviewPanel = memo(function LivePreviewPanel() {
             ) : (
               <Icon name="launch" size={11} />
             )}
-            {windowOpen ? "Reload" : "Launch"}
+            {windowOpen ? "Reopen" : "Launch"}
           </button>
         </form>
-
-        {windowOpen && (
-          <button
-            type="button"
-            onClick={close}
-            title="Close preview window and stop server"
-            className="rt-btn flex h-6 w-6 shrink-0 items-center justify-center"
-          >
-            <Icon name="close" size={12} aria-label="Close preview" />
-          </button>
-        )}
       </div>
 
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-auto px-3 py-3 flex flex-col gap-4">
-        {/* Status */}
+        {/* Status + close */}
         <div className="flex items-center gap-2">
           <span
-            className={`inline-block h-2 w-2 rounded-full ${
+            className={`inline-block h-2 w-2 shrink-0 rounded-full ${
               windowOpen ? "bg-emerald-400" : "rt-text-faint bg-current opacity-30"
             }`}
           />
-          <span className="rt-text-muted text-xs">
+          <span className="rt-text-muted flex-1 text-xs">
             {windowOpen ? "Preview window open" : "No preview window"}
           </span>
+          {windowOpen && (
+            <button
+              type="button"
+              onClick={close}
+              className="rt-btn-outline rt-btn-danger flex shrink-0 items-center gap-1 px-2 py-0.5 text-[11px] font-medium"
+            >
+              <Icon name="close" size={11} />
+              Close
+            </button>
+          )}
         </div>
 
         {/* Detected ports quick-select */}

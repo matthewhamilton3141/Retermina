@@ -34,6 +34,8 @@ pub fn run() {
             fs::create_dir,
             fs::rename_path,
             fs::delete_path,
+            fs::suggest_directories,
+            fs::validate_directory,
             terminal_import::get_terminal_cwd
         ])
         .run(tauri::generate_context!())
