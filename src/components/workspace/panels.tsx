@@ -167,6 +167,25 @@ function CodeViewPanel() {
 /* Claude Code                                                                */
 /* -------------------------------------------------------------------------- */
 
+function ClaudeIcon({ size = 12, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-hidden
+    >
+      <path
+        clipRule="evenodd"
+        fillRule="evenodd"
+        d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"
+      />
+    </svg>
+  );
+}
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
@@ -190,8 +209,6 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
         .catch(() => {});
 
     load();
-    // Refresh every 30 s — Claude generates tokens slowly enough that this is
-    // more than sufficient to stay current mid-session.
     const id = window.setInterval(load, 30_000);
     return () => window.clearInterval(id);
   }, [cwd]);
@@ -210,13 +227,12 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
               className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
               title={expanded ? "Hide breakdown" : "Show token breakdown"}
             >
-              <Icon name="bot" size={11} className="rt-accent-text shrink-0" />
+              <ClaudeIcon size={12} className="rt-text-muted shrink-0" />
               <span className="rt-text-muted flex-1 text-[10px]">
                 <span className="font-mono">{formatTokens(usage!.outputTokens)}</span>
                 <span className="rt-text-faint"> output · </span>
                 <span className="font-mono">{usage!.sessionCount}</span>
-                <span className="rt-text-faint"> {usage!.sessionCount === 1 ? "session" : "sessions"} · </span>
-                <span className="font-mono">~${usage!.estimatedCostUsd.toFixed(2)}</span>
+                <span className="rt-text-faint"> {usage!.sessionCount === 1 ? "session" : "sessions"}</span>
               </span>
               <Icon
                 name={expanded ? "chevronDown" : "chevronRight"}
@@ -226,7 +242,7 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
             </button>
           ) : (
             <div className="flex items-center gap-2 px-2.5 py-1.5">
-              <Icon name="bot" size={11} className="rt-text-faint shrink-0" />
+              <ClaudeIcon size={12} className="rt-text-faint shrink-0" />
               <span className="rt-text-faint text-[10px]">No usage data yet for this project</span>
             </div>
           )}
@@ -236,10 +252,10 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
             <div className="border-t border-[var(--rt-border)] px-2.5 pb-2 pt-1.5">
               <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
                 {[
-                  ["Input",        usage!.inputTokens],
-                  ["Output",       usage!.outputTokens],
-                  ["Cache read",   usage!.cacheReadTokens],
-                  ["Cache write",  usage!.cacheCreationTokens],
+                  ["Input",       usage!.inputTokens],
+                  ["Output",      usage!.outputTokens],
+                  ["Cache read",  usage!.cacheReadTokens],
+                  ["Cache write", usage!.cacheCreationTokens],
                 ].map(([label, val]) => (
                   <div key={label as string} className="flex items-baseline justify-between gap-1">
                     <span className="rt-text-faint text-[9px] uppercase tracking-wide">{label}</span>
@@ -247,9 +263,6 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
                   </div>
                 ))}
               </div>
-              <p className="rt-text-faint mt-1.5 text-[9px] leading-relaxed">
-                Approximate cost based on Claude Sonnet 4 pricing. Cache reads are billed at 10× less than input.
-              </p>
             </div>
           )}
         </div>
