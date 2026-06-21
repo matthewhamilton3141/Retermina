@@ -167,25 +167,6 @@ function CodeViewPanel() {
 /* Claude Code                                                                */
 /* -------------------------------------------------------------------------- */
 
-function ClaudeIcon({ size = 12, className }: { size?: number; className?: string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      className={className}
-      aria-hidden
-    >
-      <path
-        clipRule="evenodd"
-        fillRule="evenodd"
-        d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"
-      />
-    </svg>
-  );
-}
-
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
@@ -227,7 +208,7 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
               className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
               title={expanded ? "Hide breakdown" : "Show token breakdown"}
             >
-              <ClaudeIcon size={12} className="rt-text-muted shrink-0" />
+              <Icon name="claudeLogo" size={12} className="rt-text-muted shrink-0" />
               <span className="rt-text-muted flex-1 text-[10px]">
                 <span className="font-mono">{formatTokens(usage!.outputTokens)}</span>
                 <span className="rt-text-faint"> output · </span>
@@ -242,7 +223,7 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
             </button>
           ) : (
             <div className="flex items-center gap-2 px-2.5 py-1.5">
-              <ClaudeIcon size={12} className="rt-text-faint shrink-0" />
+              <Icon name="claudeLogo" size={12} className="rt-text-faint shrink-0" />
               <span className="rt-text-faint text-[10px]">No usage data yet for this project</span>
             </div>
           )}

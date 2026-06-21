@@ -99,7 +99,7 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
   fileExplorer: { icon: "explorer", label: "Explorer" },
   localhost: { icon: "localhost", label: "Localhost" },
   codeView: { icon: "code", label: "Code" },
-  claudeCode: { icon: "bot", label: "Claude Code" },
+  claudeCode: { icon: "claudeLogo", label: "Claude Code" },
   livePreview: { icon: "preview", label: "Preview" },
 };
 
