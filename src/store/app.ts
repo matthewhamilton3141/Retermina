@@ -19,6 +19,8 @@ interface AppState {
   themeId: ThemeId;
   /** How panel toggles appear in the toolbar. */
   toolbarStyle: ToolbarStyle;
+  /** Custom accent colour override (hex string) — null means use the theme default. */
+  accentColor: string | null;
   /** Open the Terminal Workspace, optionally rooted at a directory. */
   openTerminal: (cwd?: string | null) => void;
   /** Return to the Launch Hub. */
@@ -27,6 +29,8 @@ interface AppState {
   setTheme: (id: ThemeId) => void;
   /** Switch the toolbar style. */
   setToolbarStyle: (style: ToolbarStyle) => void;
+  /** Override the accent colour across all themes. Pass null to reset. */
+  setAccentColor: (color: string | null) => void;
 }
 
 /** Persisted schema version; bump when the persisted shape changes. */
@@ -39,6 +43,7 @@ export const useAppStore = create<AppState>()(
       workspaceCwd: null,
       themeId: DEFAULT_THEME_ID,
       toolbarStyle: "dropdown",
+      accentColor: null,
       openTerminal: (cwd = null) => {
         if (cwd) {
           useRecentStore.getState().record(cwd);
@@ -52,19 +57,26 @@ export const useAppStore = create<AppState>()(
       },
       setTheme: (id) => set({ themeId: id }),
       setToolbarStyle: (style) => set({ toolbarStyle: style }),
+      setAccentColor: (color) => set({ accentColor: color }),
     }),
     {
       name: "retermina.app",
       version: APP_STATE_VERSION,
-      partialize: (state) => ({ themeId: state.themeId, toolbarStyle: state.toolbarStyle }),
+      partialize: (state) => ({
+        themeId: state.themeId,
+        toolbarStyle: state.toolbarStyle,
+        accentColor: state.accentColor,
+      }),
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
         const themeId = isThemeId(p?.themeId) ? p!.themeId : current.themeId;
         const toolbarStyle: ToolbarStyle =
           p?.toolbarStyle === "dropdown" || p?.toolbarStyle === "icons"
-            ? p.toolbarStyle
-            : current.toolbarStyle;
-        return { ...current, themeId, toolbarStyle };
+            ? p.toolbarStyle : current.toolbarStyle;
+        const accentColor =
+          typeof p?.accentColor === "string" || p?.accentColor === null
+            ? p.accentColor ?? null : current.accentColor;
+        return { ...current, themeId, toolbarStyle, accentColor };
       },
     },
   ),

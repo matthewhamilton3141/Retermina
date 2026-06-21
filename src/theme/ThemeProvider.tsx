@@ -58,18 +58,40 @@ const ThemeContext = createContext<ThemeContextValue>({
   setTheme: () => {},
 });
 
+/** Convert a 6-digit hex colour to an rgba() string. */
+function hexToRgba(hex: string, alpha: number): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8)  & 255;
+  const b =  n        & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const themeId = useAppStore((state) => state.themeId);
-  const setTheme = useAppStore((state) => state.setTheme);
+  const themeId     = useAppStore((state) => state.themeId);
+  const setTheme    = useAppStore((state) => state.setTheme);
+  const accentColor = useAppStore((state) => state.accentColor);
 
   // Tolerate an unknown persisted id by resolving to the default engine.
   const theme = resolveTheme(themeId);
 
-  // Apply the attribute before paint so the first frame is already themed and
-  // engine swaps never flash the previous look.
+  // Apply the data-theme attribute and optional accent override before paint.
   useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme.id;
-  }, [theme.id]);
+    const el = document.documentElement;
+    el.dataset.theme = theme.id;
+
+    if (accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor)) {
+      el.style.setProperty("--rt-accent",            accentColor);
+      el.style.setProperty("--rt-accent-soft",       hexToRgba(accentColor, 0.12));
+      el.style.setProperty("--rt-ring",              hexToRgba(accentColor, 0.5));
+      el.style.setProperty("--rt-grid-placeholder",  accentColor);
+    } else {
+      el.style.removeProperty("--rt-accent");
+      el.style.removeProperty("--rt-accent-soft");
+      el.style.removeProperty("--rt-ring");
+      el.style.removeProperty("--rt-grid-placeholder");
+    }
+  }, [theme.id, accentColor]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
