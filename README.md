@@ -10,7 +10,8 @@ A high-utility terminal workspace built on Tauri v2 and React. Retermina replace
 
 Retermina is a native desktop application built with [Tauri v2](https://v2.tauri.app). The Rust backend owns all privileged operations:
 
-- **PTY management** — spawns and drives native shell sessions (Zsh, Bash, PowerShell) via `portable-pty`. Output is base64-encoded and streamed to the frontend over a Tauri `Channel` for zero-copy delivery to xterm.js.
+- **PTY management** — spawns and drives native shell sessions (Zsh, Bash, PowerShell) via `portable-pty`. Output is base64-encoded and streamed to the frontend over a Tauri `Channel` for zero-copy delivery to xterm.js. Each session is launched with `TERM=xterm-256color`, `COLORTERM=truecolor`, and a theme-derived `COLORFGBG` (light vs. dark) so CLI tools like the Claude CLI pick a foreground that stays legible on light themes instead of assuming a dark background.
+- **Editor history** (`vscode.rs`) — `get_recent_workspaces` reads the local VSCode/Cursor/VSCodium `state.vscdb` (read-only) to surface recently opened folders on the Launch Hub alongside Retermina's own history.
 - **File system** — `list_dir`, `read_file`, `write_file`, `create_file`, `create_dir`, `rename_path`, `delete_path` commands with a 5 MB read cap and UTF-8 validation, plus `suggest_directories` / `validate_directory` backing the Launch Hub's autocompleting "Open Folder" field and `list_files` (a capped recursive walk) powering the Cmd/Ctrl+P quick-open index.
 - **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
 - **Claude usage** (`claude_stats.rs`) — parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost.
@@ -18,7 +19,7 @@ Retermina is a native desktop application built with [Tauri v2](https://v2.tauri
 - **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata to the Iris command bar.
 - **Port discovery** — `lsof` / `netstat` parsing to surface active local servers in the Localhost Tracker panel.
 
-IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. The `updater` + `process` plugins back the Settings → Version self-update flow, and the `dialog` plugin powers Loom export/import file pickers. All window actions (drag, close, minimize, maximize, animated resize) and plugin permissions are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed.
+IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. The `updater` + `process` plugins back the Settings → Version self-update flow, and the `dialog` plugin powers Loom export/import file pickers. All window actions (drag, close, destroy, minimize, maximize, animated resize) and plugin permissions are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed. (`allow-destroy` is what lets the Preview pop-out actually tear itself down on close.)
 
 ### Workspace grid — powered by react-grid-layout
 
@@ -38,7 +39,7 @@ Panel children are memoized against `[panels, cwd, closePanel]` so live terminal
 
 ### Modular panel workspace
 
-Six panel types can be independently toggled, dragged, resized, and arranged across the 12-column grid:
+Seven panel types can be independently toggled, dragged, resized, and arranged across the 12-column grid:
 
 | Panel | Purpose |
 |---|---|
@@ -47,7 +48,8 @@ Six panel types can be independently toggled, dragged, resized, and arranged acr
 | **Code** | Read-only (or Safe Edit) file viewer with syntax highlighting, live diff, and inline hex colour swatches |
 | **Localhost** | Active port tracker with one-click process termination |
 | **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip |
-| **Preview** | Live preview launcher — opens a standalone native window |
+| **Preview** | Live preview launcher — opens a standalone native window pointed at a dev-server URL |
+| **Changes** | Live project-wide git diff (working tree vs `HEAD`) that updates as files change — including edits made by the Claude CLI in the Terminal |
 
 Panels snap to the grid, resize from all eight edges, and resolve collisions without flying off-screen.
 
@@ -149,7 +151,7 @@ Five structural theme engines swap the entire visual character of the applicatio
 
 Each engine defines ~50 CSS custom properties (`--rt-bg`, `--rt-surface`, `--rt-accent`, `--rt-backdrop`, `--rt-shadow-panel`, etc.). Components use semantic utility classes (`.rt-panel`, `.rt-btn`, `.rt-menu`) that read the tokens — no per-component theme logic.
 
-The xterm.js terminal color table is also engine-specific. Only the **cursor** and **selection** track the active accent — the selection is painted as a solid accent fill so a highlight inside the Terminal reads identically to the web `::selection` highlight in the Code panel. The ANSI palette slots (`red`, `blue`, `green`, …) are left untouched so terminal apps like the Claude CLI render their own UI colours correctly.
+The xterm.js terminal color table is also engine-specific. Only the **cursor** and **selection** track the active accent — the selection is painted as a solid accent fill so a highlight inside the Terminal reads identically to the web `::selection` highlight in the Code panel. The ANSI palette slots (`red`, `blue`, `green`, …) are left untouched so terminal apps like the Claude CLI render their own UI colours correctly. For tools that instead auto-detect light/dark from the environment, each shell is spawned with a theme-derived `COLORFGBG`, so they choose a foreground that stays readable on light engines rather than emitting near-invisible white text. (This is read once at shell start, so it applies to sessions spawned after a theme switch.)
 
 Selection (and other content drawn _on_ the accent — checkmarks, radio dots, the toggle knob) uses a **contrast-aware foreground**: ThemeProvider computes a `--rt-accent-contrast` token from the accent's WCAG luminance and picks near-black or white, whichever reads better. So a light custom accent (e.g. white) no longer turns highlights into blank, unreadable blocks.
 
@@ -162,7 +164,7 @@ A centred, frosted-glass **Settings overlay** centralizes all customization behi
 - **Theme / Retermina Loom** — visual preview cards for the five engines, an accent-colour picker (presets + custom hex/colour input), "Save as preset", and a one-click revert to the engine's brand accent. Preview cards paint in their own palette, so a dark card keeps light text (and vice-versa) regardless of the active theme. A **Font pairing** control suggests (and optionally auto-applies) the font categorized for the active theme, and the **Retermina Loom** preset manager lives here (see below).
 - **Appearance** — top-bar style (icons only vs. icons + labels), panel-toggle style (dropdown vs. icon strip), and a global **workspace text scale** slider (80–130 %) that drives the root `font-size` so every rem-based element scales together.
 - **Font** — fonts are grouped by thematic category. Pick from the bundled typefaces (Inter, Space Grotesk, Nunito, JetBrains Mono) or **upload your own** `.ttf`/`.otf`. Uploaded files are copied by Rust into `<data_dir>/Retermina/fonts`, registered at runtime with the `FontFace` Web API (bytes flow through Rust as base64, so no `asset://` scope is needed), and assigned to a category that drives theme pairing.
-- **Version** — shows the current app version and a **Check for Updates** button that drives the `@tauri-apps/plugin-updater` flow (download with progress → relaunch via `@tauri-apps/plugin-process`).
+- **Version** — shows the current app version and a **Check for Updates** button that drives the `@tauri-apps/plugin-updater` flow (download with progress → relaunch via `@tauri-apps/plugin-process`). Retermina also checks for updates **on launch** (silently — a failed/unreachable endpoint is a no-op) and surfaces an available update through a dismissible banner; the manual button and the banner share one updater store, and a dismissal is remembered per version so the same update won't nag again.
 
 ### Retermina Loom — portable preset system
 
@@ -190,6 +192,18 @@ The Code panel includes a built-in diff mode. When activated:
 
 The diff panel also supports **Safe Edit** mode — an inline `<textarea>` backed by the Rust `write_file` command, replacing the read-only view when unlocked.
 
+### Changes panel — live git diff
+
+Where the Code panel's diff tracks a single open file against a manual snapshot, the **Changes** panel shows the whole working tree. It polls `git` (via the `run_background_command` bridge — no new native commands) every couple of seconds and renders a per-file, collapsible diff of everything changed since the last commit:
+
+- **Tracked edits** come from `git diff HEAD`; **new untracked files** are read directly and rendered as all-additions (git omits them from the diff until staged).
+- Files carry a status badge (M/A/D/R/U) and per-file `+/−` counts, with green/red line rendering and `@@` hunk headers.
+- Because it just polls git, it reflects edits from **anywhere** — most usefully, changes the Claude CLI makes while running in the Terminal show up here live.
+
+### Live preview window
+
+The **Preview** panel launches a standalone native window (not a sandboxed iframe), so dev-server HMR WebSockets connect directly. Detected localhost ports are offered as one-click targets. Closing the window (its native button, the panel's Close, or the title-bar indicator) tears the preview down deterministically and — unless you turn off **"Stop the dev server when closing"** — kills the dev server bound to that port. A guard refuses to kill Retermina's *own* dev server if you happen to preview it.
+
 ### OS drag-and-drop
 
 - **LaunchHub** — drag a folder from Finder to open it as a workspace; drag a text file to open it in the Code panel.
@@ -197,7 +211,7 @@ The diff panel also supports **Safe Edit** mode — an inline `<textarea>` backe
 
 ### Recent workspaces
 
-Every folder opened in Retermina is recorded in a native localStorage history (max 20 entries, timestamped). The LaunchHub displays them sorted by recency with relative timestamps and per-entry removal.
+Every folder opened in Retermina is recorded in a native localStorage history (max 20 entries, timestamped). The LaunchHub displays them sorted by recency with relative timestamps and per-entry removal. It also surfaces recent folders from your local editor history (VSCode / Cursor / VSCodium, via the Rust `get_recent_workspaces` command), merged in and de-duplicated against Retermina's own list — local entries win, and editor-sourced folders are tagged **Editor**. Opening one records it into the local history, so it stops showing as a duplicate next time.
 
 ### Custom title bar
 

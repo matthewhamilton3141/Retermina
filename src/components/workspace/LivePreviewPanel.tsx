@@ -6,6 +6,8 @@ import {
   openPreviewWindow,
   closePreviewWindow,
   isPreviewOpen,
+  getPreviewKillServerOnClose,
+  setPreviewKillServerOnClose,
 } from "../../lib/previewWindow";
 
 /**
@@ -26,6 +28,7 @@ export const LivePreviewPanel = memo(function LivePreviewPanel() {
   const [detecting, setDetecting] = useState(true);
   const [launching, setLaunching] = useState(false);
   const [windowOpen, setWindowOpen] = useState(false);
+  const [killServer, setKillServer] = useState(getPreviewKillServerOnClose);
   const [detectedPorts, setDetectedPorts] = useState<{ port: number; process: string }[]>([]);
 
   // Auto-detect listening ports on mount.
@@ -73,6 +76,14 @@ export const LivePreviewPanel = memo(function LivePreviewPanel() {
     setInputValue(`http://localhost:${port}`);
   }, []);
 
+  const toggleKillServer = useCallback(() => {
+    setKillServer((prev) => {
+      const next = !prev;
+      setPreviewKillServerOnClose(next);
+      return next;
+    });
+  }, []);
+
   return (
     <div className="rt-subsurface flex h-full w-full flex-col">
       {/* Address bar */}
@@ -104,11 +115,24 @@ export const LivePreviewPanel = memo(function LivePreviewPanel() {
             {windowOpen ? "Reopen" : "Launch"}
           </button>
         </form>
+        {/* Close lives in the address bar so it's always where the eye is when
+            a preview is open — not buried in the panel body. */}
+        {windowOpen && (
+          <button
+            type="button"
+            onClick={close}
+            title="Close preview window"
+            className="rt-btn-outline rt-btn-danger flex h-6 shrink-0 items-center gap-1 px-2 text-[11px] font-medium"
+          >
+            <Icon name="close" size={11} />
+            Close
+          </button>
+        )}
       </div>
 
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-auto px-3 py-3 flex flex-col gap-4">
-        {/* Status + close */}
+        {/* Status */}
         <div className="flex items-center gap-2">
           <span
             className={`inline-block h-2 w-2 shrink-0 rounded-full ${
@@ -118,17 +142,20 @@ export const LivePreviewPanel = memo(function LivePreviewPanel() {
           <span className="rt-text-muted flex-1 text-xs">
             {windowOpen ? "Preview window open" : "No preview window"}
           </span>
-          {windowOpen && (
-            <button
-              type="button"
-              onClick={close}
-              className="rt-btn-outline rt-btn-danger flex shrink-0 items-center gap-1 px-2 py-0.5 text-[11px] font-medium"
-            >
-              <Icon name="close" size={11} />
-              Close
-            </button>
-          )}
         </div>
+
+        {/* Lifecycle preference — makes the implicit "closing kills the server"
+            behavior visible and opt-out. Honored by both the panel Close button
+            and the preview window's own native close button. */}
+        <label className="flex cursor-pointer items-center gap-2 text-xs select-none">
+          <input
+            type="checkbox"
+            checked={killServer}
+            onChange={toggleKillServer}
+            className="accent-[var(--rt-accent)]"
+          />
+          <span className="rt-text-muted">Stop the dev server when closing</span>
+        </label>
 
         {/* Detected ports quick-select */}
         {detectedPorts.length > 0 && (

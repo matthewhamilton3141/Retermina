@@ -6,7 +6,6 @@ import LaunchActionCard, {
   type LaunchAction,
 } from "../components/launch/LaunchActionCard";
 import RecentWorkspacesPanel from "../components/launch/RecentWorkspacesPanel";
-import type { RecentEntry } from "../store/recent";
 import { useAppStore } from "../store/app";
 import { useRecentStore } from "../store/recent";
 import { useEditorStore } from "../store/editor";
@@ -292,7 +291,7 @@ export function LaunchHub() {
     },
   ];
 
-  const openWorkspace = (entry: RecentEntry) => openTerminal(entry.path);
+  const openWorkspace = (path: string) => openTerminal(path);
   const meta = pending ? PENDING_META[pending] : null;
 
   // Keyboard handler for the open-folder combobox input

@@ -10,6 +10,11 @@ export interface CreatePtyOptions {
   cwd?: string | null;
   cols: number;
   rows: number;
+  /**
+   * `COLORFGBG` value ("fg;bg") derived from the active theme so CLI tools pick
+   * colours legible on the current background. See `terminalColorFgbg`.
+   */
+  colorFgbg?: string;
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   type PtyEvent,
 } from "../../lib/pty";
 import { terminalBus } from "../../lib/terminalBus";
+import { terminalColorFgbg } from "../../lib/theme";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useTauriFileDrop } from "../../hooks/useTauriFileDrop";
 import Icon from "../Icon";
@@ -161,7 +162,17 @@ export function TerminalViewport({
       }
     };
 
-    createPtySession({ cwd, cols: term.cols, rows: term.rows }, handleEvent)
+    createPtySession(
+      {
+        cwd,
+        cols: term.cols,
+        rows: term.rows,
+        // Seed the shell's COLORFGBG from the theme active at spawn time so
+        // tools like Claude Code emit colours legible on a light background.
+        colorFgbg: terminalColorFgbg(terminalThemeRef.current.background),
+      },
+      handleEvent,
+    )
       .then((id) => {
         if (disposed) {
           void closePty(id); // unmounted before connect
