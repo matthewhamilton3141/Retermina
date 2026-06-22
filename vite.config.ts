@@ -9,6 +9,22 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  // Split heavy vendor libraries into their own chunks so the Launch Hub isn't
+  // forced to download the terminal/grid/highlighter code up front, and the
+  // single >500 KB warning chunk is broken into cacheable pieces.
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          xterm: ["@xterm/xterm", "@xterm/addon-fit"],
+          grid: ["react-grid-layout"],
+          prism: ["prismjs"],
+          vendor: ["zustand", "lucide-react"],
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

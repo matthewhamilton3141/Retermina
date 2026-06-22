@@ -47,6 +47,35 @@
   --rt-terminal-bg: #0a0a0a;
   --rt-grid-placeholder: #10b981;
   --rt-resize-handle: rgba(212, 212, 216, 0.5);
+
+  /* Syntax-highlight palette (dark default — tuned for the Sleek engine). */
+  --rt-syn-comment: #6b7280;
+  --rt-syn-keyword: #c792ea;
+  --rt-syn-string: #b5e890;
+  --rt-syn-number: #f78c6c;
+  --rt-syn-function: #82aaff;
+  --rt-syn-class: #ffcb6b;
+  --rt-syn-tag: #f07178;
+  --rt-syn-attr: #ffcb6b;
+  --rt-syn-operator: #89ddff;
+  --rt-syn-punct: #9aa2b1;
+}
+
+/* Light syntax palette shared by every light engine. */
+[data-theme="pastel"],
+[data-theme="glass"],
+[data-theme="minimalist"],
+[data-theme="brutalism"] {
+  --rt-syn-comment: #8a8f98;
+  --rt-syn-keyword: #7c3aed;
+  --rt-syn-string: #15803d;
+  --rt-syn-number: #b45309;
+  --rt-syn-function: #1d4ed8;
+  --rt-syn-class: #a16207;
+  --rt-syn-tag: #b91c1c;
+  --rt-syn-attr: #a16207;
+  --rt-syn-operator: #0e7490;
+  --rt-syn-punct: #71717a;
 }
 
 /* Soft Pastel — light, airy, generously rounded, soft colored shadows. */
@@ -678,3 +707,55 @@ body {
   border-radius: 9999px;
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
+
+/*
+ * Prism syntax tokens (Code panel read-only view).
+ *
+ * Colours are driven by the per-engine `--rt-syn-*` tokens so highlighting
+ * re-themes with the app and stays legible on light and dark surfaces alike.
+ * Scoped under `.rt-code` so these never leak into other monospace surfaces.
+ */
+.rt-code .token.comment,
+.rt-code .token.prolog,
+.rt-code .token.doctype,
+.rt-code .token.cdata { color: var(--rt-syn-comment); font-style: italic; }
+
+.rt-code .token.punctuation { color: var(--rt-syn-punct); }
+
+.rt-code .token.keyword,
+.rt-code .token.atrule,
+.rt-code .token.important,
+.rt-code .token.rule { color: var(--rt-syn-keyword); }
+
+.rt-code .token.string,
+.rt-code .token.char,
+.rt-code .token.attr-value,
+.rt-code .token.regex,
+.rt-code .token.url { color: var(--rt-syn-string); }
+
+.rt-code .token.number,
+.rt-code .token.boolean,
+.rt-code .token.constant,
+.rt-code .token.symbol { color: var(--rt-syn-number); }
+
+.rt-code .token.function,
+.rt-code .token.method { color: var(--rt-syn-function); }
+
+.rt-code .token.class-name,
+.rt-code .token.builtin,
+.rt-code .token.namespace { color: var(--rt-syn-class); }
+
+.rt-code .token.tag,
+.rt-code .token.selector,
+.rt-code .token.deleted { color: var(--rt-syn-tag); }
+
+.rt-code .token.attr-name,
+.rt-code .token.property,
+.rt-code .token.inserted { color: var(--rt-syn-attr); }
+
+.rt-code .token.operator,
+.rt-code .token.entity,
+.rt-code .token.variable { color: var(--rt-syn-operator); }
+
+.rt-code .token.bold { font-weight: 600; }
+.rt-code .token.italic { font-style: italic; }

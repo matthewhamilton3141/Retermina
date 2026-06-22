@@ -5,6 +5,7 @@ import TerminalWorkspace from "./views/TerminalWorkspace";
 import ThemeProvider from "./theme/ThemeProvider";
 import TitleBar from "./components/TitleBar";
 import CommandPalette from "./components/CommandPalette";
+import FileSearch from "./components/FileSearch";
 import { useAppStore } from "./store/app";
 import { useSessionStore } from "./store/session";
 
@@ -15,6 +16,7 @@ function App() {
   const goToLaunch    = useAppStore((s) => s.goToLaunch);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [fileSearchOpen, setFileSearchOpen] = useState(false);
 
   // ── Session reconnect — run once on mount ────────────────────────────────
   useEffect(() => {
@@ -23,12 +25,16 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Cmd+K / Ctrl+K — open command palette ───────────────────────────────
+  // ── Global shortcuts — Cmd/Ctrl+K (commands), Cmd/Ctrl+P (file search) ────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+        e.preventDefault();
+        setFileSearchOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", handler);
@@ -49,6 +55,7 @@ function App() {
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <FileSearch open={fileSearchOpen} onClose={() => setFileSearchOpen(false)} cwd={workspaceCwd} />
     </ThemeProvider>
   );
 }

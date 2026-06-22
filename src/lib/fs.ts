@@ -68,6 +68,14 @@ export async function validateDirectory(path: string): Promise<boolean> {
   return invoke<boolean>("validate_directory", { path });
 }
 
+/**
+ * Recursively list file paths under `root` (relative to it) for quick-open,
+ * capped at `max`. Hidden entries and build/VCS/dependency dirs are skipped.
+ */
+export async function listFiles(root: string, max = 4000): Promise<string[]> {
+  return invoke<string[]>("list_files", { root, max });
+}
+
 /** Read the raw Retermina Loom presets document (empty string if none yet). */
 export async function readPresets(): Promise<string> {
   return invoke<string>("read_presets");

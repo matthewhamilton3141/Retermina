@@ -52,6 +52,63 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     Ok(entries)
 }
 
+/// Directory names skipped entirely by [`list_files`] (build artifacts, VCS,
+/// dependency trees) so the quick-open index stays fast and relevant.
+const IGNORED_DIRS: &[&str] = &[
+    "node_modules", ".git", "dist", "build", "target", ".next", ".cache",
+    ".svelte-kit", "out", ".turbo", ".venv", "venv", "__pycache__",
+];
+
+/// Recursively list file paths under `root` for the quick-open file search.
+///
+/// Returns paths relative to `root`, capped at `max` entries (a depth-first
+/// walk that bails as soon as the cap is hit so huge trees never hang). Hidden
+/// entries and well-known build/VCS/dependency directories are skipped.
+#[tauri::command]
+pub fn list_files(root: String, max: usize) -> Result<Vec<String>, String> {
+    let root_path = std::path::Path::new(&root);
+    if !root_path.is_dir() {
+        return Err("Not a directory".into());
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    let mut stack: Vec<std::path::PathBuf> = vec![root_path.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        if out.len() >= max {
+            break;
+        }
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue, // Unreadable dir — skip, don't fail the whole walk.
+        };
+        for entry in entries.filter_map(|e| e.ok()) {
+            let name = match entry.file_name().into_string() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            if name.starts_with('.') {
+                continue;
+            }
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                if !IGNORED_DIRS.contains(&name.as_str()) {
+                    stack.push(entry.path());
+                }
+            } else if out.len() < max {
+                if let Ok(rel) = entry.path().strip_prefix(root_path) {
+                    if let Some(s) = rel.to_str() {
+                        out.push(s.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    out.sort();
+    Ok(out)
+}
+
 /// Rename (or move) a filesystem entry from `from` to `to`.
 #[tauri::command]
 pub fn rename_path(from: String, to: String) -> Result<(), String> {

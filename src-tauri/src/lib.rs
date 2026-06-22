@@ -42,6 +42,7 @@ pub fn run() {
             fs::delete_path,
             fs::suggest_directories,
             fs::validate_directory,
+            fs::list_files,
             terminal_import::get_terminal_cwd,
             claude_stats::get_claude_token_usage,
             fonts::save_font,

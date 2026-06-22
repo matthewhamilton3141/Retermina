@@ -11,7 +11,7 @@ A high-utility terminal workspace built on Tauri v2 and React. Retermina replace
 Retermina is a native desktop application built with [Tauri v2](https://v2.tauri.app). The Rust backend owns all privileged operations:
 
 - **PTY management** — spawns and drives native shell sessions (Zsh, Bash, PowerShell) via `portable-pty`. Output is base64-encoded and streamed to the frontend over a Tauri `Channel` for zero-copy delivery to xterm.js.
-- **File system** — `list_dir`, `read_file`, `write_file`, `create_file`, `create_dir`, `rename_path`, `delete_path` commands with a 5 MB read cap and UTF-8 validation, plus `suggest_directories` / `validate_directory` backing the Launch Hub's autocompleting "Open Folder" field.
+- **File system** — `list_dir`, `read_file`, `write_file`, `create_file`, `create_dir`, `rename_path`, `delete_path` commands with a 5 MB read cap and UTF-8 validation, plus `suggest_directories` / `validate_directory` backing the Launch Hub's autocompleting "Open Folder" field and `list_files` (a capped recursive walk) powering the Cmd/Ctrl+P quick-open index.
 - **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
 - **Claude usage** (`claude_stats.rs`) — parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost.
 - **Loom presets** (`presets.rs`) — `read_presets` / `write_presets` persist the preset library to `<data_dir>/Retermina/presets.json`, serving as the Tauri-file storage backend for the Loom store.
@@ -44,16 +44,24 @@ Six panel types can be independently toggled, dragged, resized, and arranged acr
 |---|---|
 | **Explorer** | Directory tree with expand/collapse navigation, inline create/rename/delete, and a right-click context menu |
 | **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY |
-| **Code** | Read-only (or Safe Edit) file viewer with live diff and inline hex colour swatches |
+| **Code** | Read-only (or Safe Edit) file viewer with syntax highlighting, live diff, and inline hex colour swatches |
 | **Localhost** | Active port tracker with one-click process termination |
 | **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip |
 | **Preview** | Live preview launcher — opens a standalone native window |
 
 Panels snap to the grid, resize from all eight edges, and resolve collisions without flying off-screen.
 
+#### Syntax highlighting
+
+The read-only Code view is tokenized with **Prism** and rendered to React nodes (not an HTML string), so highlighting and the hex-colour swatches coexist — every plain-text token is still scanned for colour literals. Token colours are driven by per-engine `--rt-syn-*` CSS variables, so the highlighting re-themes with the app and stays legible on both light and dark engines. Language is resolved from the file extension (TS/TSX, JS/JSX, JSON, CSS, HTML, Markdown, Bash, Python, Rust, YAML, TOML); unknown types or very large files fall back to plain text + swatches.
+
 #### Inline colour swatches
 
 The Code viewer scans file contents for CSS hex colour literals (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`) and renders a small colour chip immediately before each value, the way VS Code does. Decoration is skipped above 200 KB so large files stay responsive.
+
+#### Quick-open (Cmd / Ctrl + P)
+
+A fuzzy file finder indexes the active workspace via the Rust `list_files` command (a capped, depth-first walk that skips `node_modules`, `.git`, build output, and hidden entries). Matches are scored with a basename-weighted fuzzy ranker; pressing Enter opens the file in the Code panel, revealing the panel if it was hidden. It mirrors the **Cmd / Ctrl + K** Command Palette's overlay and keyboard navigation.
 
 #### Floating menus
 
@@ -213,6 +221,8 @@ npm install
 npm run tauri dev    # development
 npm run tauri build  # production bundle
 ```
+
+The production build splits heavy vendor libraries (xterm.js, react-grid-layout, Prism) into their own Rollup chunks via `manualChunks` in `vite.config.ts`, so the Launch Hub no longer ships the terminal/grid/highlighter code up front.
 
 > **Self-updates:** the `updater` config in `src-tauri/tauri.conf.json` ships with a placeholder endpoint and public key. "Check for Updates" will report that it can't reach the update server until you point `plugins.updater.endpoints` at a real release feed and replace `pubkey` with the public half of your own signing key (`npm run tauri signer generate`). Builds must be signed with the matching private key for updates to verify.
 
