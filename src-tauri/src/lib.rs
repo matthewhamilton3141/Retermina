@@ -1,4 +1,5 @@
 mod claude_stats;
+mod fonts;
 mod fs;
 mod iris;
 mod localhost;
@@ -16,6 +17,8 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(pty::PtyManager::default())
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -38,7 +41,11 @@ pub fn run() {
             fs::suggest_directories,
             fs::validate_directory,
             terminal_import::get_terminal_cwd,
-            claude_stats::get_claude_token_usage
+            claude_stats::get_claude_token_usage,
+            fonts::save_font,
+            fonts::read_font,
+            fonts::list_fonts,
+            fonts::delete_font
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

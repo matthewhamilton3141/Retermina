@@ -30,6 +30,53 @@ const TerminalPanel = memo(function TerminalPanel({ cwd }: { cwd: string | null 
 /* Code View                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Matches CSS hex colours (#rgb, #rgba, #rrggbb, #rrggbbaa). The trailing
+ * negative lookahead stops a colour from being partially matched out of a
+ * longer hex run, and the longest alternatives are tried first.
+ */
+const HEX_COLOR_RE =
+  /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-fA-F])/g;
+
+/** Skip swatch decoration above this size so huge files stay snappy. */
+const MAX_SWATCH_CHARS = 200_000;
+
+/** Inline colour chip rendered just before a hex value (VS Code style). */
+function ColorSwatch({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden
+      className="mr-[0.35em] inline-block h-[0.85em] w-[0.85em] rounded-[2px] border border-[rgba(127,127,127,0.45)] align-[-0.1em]"
+      style={{ backgroundColor: color }}
+    />
+  );
+}
+
+/**
+ * Split source text into nodes, inserting a {@link ColorSwatch} before every
+ * hex colour literal. Whitespace is preserved because the untouched text
+ * segments still carry their original characters inside the <pre>.
+ */
+function renderWithSwatches(text: string | null): ReactNode {
+  if (!text || text.length > MAX_SWATCH_CHARS) return text;
+
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  HEX_COLOR_RE.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = HEX_COLOR_RE.exec(text)) !== null) {
+    const hex = match[0];
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    nodes.push(<ColorSwatch key={`sw-${key++}`} color={hex} />);
+    nodes.push(hex);
+    lastIndex = match.index + hex.length;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
+}
+
 function CodeViewPanel() {
   const selectedPath = useEditorStore((s) => s.selectedPath);
   const content = useEditorStore((s) => s.content);
@@ -154,7 +201,7 @@ function CodeViewPanel() {
             </div>
           ) : (
             <pre className="h-full w-full overflow-auto p-3 font-mono text-[12px] leading-relaxed whitespace-pre">
-              {content}
+              {renderWithSwatches(content)}
             </pre>
           )}
         </div>

@@ -151,32 +151,35 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
   const flexDir = direction === "h" ? "flex-row" : "flex-col";
 
   return (
-    <div className="group/panel rt-terminal-surface relative flex h-full w-full flex-col overflow-hidden">
-      {/* ── Split controls — revealed on panel hover ── */}
-      <div className="pointer-events-none absolute right-2 top-2 z-30 flex gap-1 opacity-0 transition-opacity group-hover/panel:pointer-events-auto group-hover/panel:opacity-100">
+    <div className="rt-terminal-surface relative flex h-full w-full flex-col overflow-hidden">
+      {/* ── Split toolbar — pinned to the top of the terminal panel ── */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-[var(--rt-border)] px-2 py-1">
+        <span className="rt-text-faint mr-auto text-[10px] font-medium uppercase tracking-wider">
+          Split
+        </span>
         <button
           type="button"
           onClick={() => split("h")}
-          title="Split horizontally"
+          title="Split horizontally (side-by-side)"
           className="rt-btn-outline flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium"
         >
-          <Icon name="files" size={10} />
+          <Icon name="columns" size={11} />
           <span>H</span>
         </button>
         <button
           type="button"
           onClick={() => split("v")}
-          title="Split vertically"
+          title="Split vertically (stacked)"
           className="rt-btn-outline flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium"
         >
-          <Icon name="files" size={10} />
+          <Icon name="rows" size={11} />
           <span>V</span>
         </button>
         {multi && (
           <button
             type="button"
             onClick={() => setPanes([{ id: uid(), size: 100 }])}
-            title="Merge all panes"
+            title="Merge all panes back into one"
             className="rt-btn-outline px-1.5 py-0.5 text-[10px] font-medium"
           >
             Merge

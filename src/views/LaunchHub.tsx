@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import Icon from "../components/Icon";
-import ThemeSwitcher from "../components/ThemeSwitcher";
+import SettingsModal from "../components/SettingsModal";
 import LaunchActionCard, {
   type LaunchAction,
 } from "../components/launch/LaunchActionCard";
@@ -46,6 +46,7 @@ export function LaunchHub() {
   const recentEntries = useRecentStore((s) => s.entries);
 
   const [pending, setPending] = useState<PendingId | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [running, setRunning] = useState(false);
@@ -337,10 +338,18 @@ export function LaunchHub() {
       <header className="rt-toolbar flex items-center gap-2 px-3 py-2">
         <Icon name="terminal" size={15} className="rt-accent-text shrink-0" />
         <span className="text-sm font-medium">Retermina</span>
-        <div className="ml-auto">
-          <ThemeSwitcher align="right" />
-        </div>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          title="Settings"
+          className="rt-btn-outline ml-auto flex items-center gap-1.5 px-2 py-1 text-xs font-medium"
+        >
+          <Icon name="settings" size={14} />
+          <span>Settings</span>
+        </button>
       </header>
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-12 px-6 py-16">

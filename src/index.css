@@ -53,13 +53,21 @@
 [data-theme="pastel"] {
   color-scheme: light;
 
-  --rt-bg: #f6f4fb;
+  /* Base tint and ambient glows are mixed from the live accent (`--rt-accent`),
+   * so picking a new accent re-tints the whole Soft Pastel backdrop instead of
+   * leaving a static violet/pink wash. Falls back to the engine's brand accent
+   * when no custom accent override is set. */
+  --rt-bg: color-mix(in srgb, var(--rt-accent) 7%, #f6f4fb);
   --rt-bg-image: radial-gradient(
       circle at 18% 0%,
-      rgba(167, 139, 250, 0.16),
-      transparent 42%
+      color-mix(in srgb, var(--rt-accent) 20%, transparent),
+      transparent 45%
     ),
-    radial-gradient(circle at 100% 100%, rgba(236, 72, 153, 0.12), transparent 45%);
+    radial-gradient(
+      circle at 100% 100%,
+      color-mix(in srgb, var(--rt-accent) 13%, transparent),
+      transparent 48%
+    );
   --rt-surface: rgba(255, 255, 255, 0.75);
   --rt-surface-strong: rgba(255, 255, 255, 0.9);
   --rt-surface-hover: rgba(139, 92, 246, 0.1);

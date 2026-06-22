@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import Icon from "../Icon";
+import FloatingMenu from "../FloatingMenu";
 import {
   createDir,
   createFile,
@@ -269,29 +270,26 @@ function ContextMenu({ menu, onClose, onRename, onDelete, onNewFile, onNewFolder
   }
 
   return (
-    <>
-      <div className="fixed inset-0 z-[60]" onMouseDown={onClose} />
-      <div className="rt-menu fixed z-[61] min-w-[160px] py-1" style={{ left: menu.x, top: menu.y }}>
-        {entry.isDir ? (
-          <>
-            {item("New File", "newFile", () => onNewFile(entry.path))}
-            {item("New Folder", "newFolder", () => onNewFolder(entry.path))}
-            <div className="rt-divider my-1 mx-1 h-px" />
-            {item("Rename", "file", () => onRename(entry))}
-            <div className="rt-divider my-1 mx-1 h-px" />
-            {item("Delete", "trash", () => onDelete(entry), true)}
-          </>
-        ) : (
-          <>
-            {item("Open", "code", () => {})}
-            <div className="rt-divider my-1 mx-1 h-px" />
-            {item("Rename", "file", () => onRename(entry))}
-            <div className="rt-divider my-1 mx-1 h-px" />
-            {item("Delete", "trash", () => onDelete(entry), true)}
-          </>
-        )}
-      </div>
-    </>
+    <FloatingMenu x={menu.x} y={menu.y} onClose={onClose} className="min-w-[160px] py-1">
+      {entry.isDir ? (
+        <>
+          {item("New File", "newFile", () => onNewFile(entry.path))}
+          {item("New Folder", "newFolder", () => onNewFolder(entry.path))}
+          <div className="rt-divider my-1 mx-1 h-px" />
+          {item("Rename", "file", () => onRename(entry))}
+          <div className="rt-divider my-1 mx-1 h-px" />
+          {item("Delete", "trash", () => onDelete(entry), true)}
+        </>
+      ) : (
+        <>
+          {item("Open", "code", () => {})}
+          <div className="rt-divider my-1 mx-1 h-px" />
+          {item("Rename", "file", () => onRename(entry))}
+          <div className="rt-divider my-1 mx-1 h-px" />
+          {item("Delete", "trash", () => onDelete(entry), true)}
+        </>
+      )}
+    </FloatingMenu>
   );
 }
 

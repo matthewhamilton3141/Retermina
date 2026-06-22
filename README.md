@@ -11,11 +11,13 @@ A high-utility terminal workspace built on Tauri v2 and React. Retermina replace
 Retermina is a native desktop application built with [Tauri v2](https://v2.tauri.app). The Rust backend owns all privileged operations:
 
 - **PTY management** — spawns and drives native shell sessions (Zsh, Bash, PowerShell) via `portable-pty`. Output is base64-encoded and streamed to the frontend over a Tauri `Channel` for zero-copy delivery to xterm.js.
-- **File system** — `list_dir`, `read_file`, `write_file`, `create_file` commands with a 5 MB read cap and UTF-8 validation.
+- **File system** — `list_dir`, `read_file`, `write_file`, `create_file`, `create_dir`, `rename_path`, `delete_path` commands with a 5 MB read cap and UTF-8 validation, plus `suggest_directories` / `validate_directory` backing the Launch Hub's autocompleting "Open Folder" field.
+- **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
+- **Claude usage** (`claude_stats.rs`) — parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost.
 - **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata to the Iris command bar.
 - **Port discovery** — `lsof` / `netstat` parsing to surface active local servers in the Localhost Tracker panel.
 
-IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. All window actions (drag, close, minimize, maximize) are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed.
+IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. The `updater` and `process` plugins back the Settings → Version self-update flow. All window actions (drag, close, minimize, maximize) and plugin permissions are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed.
 
 ### Workspace grid — powered by react-grid-layout
 
@@ -39,14 +41,22 @@ Six panel types can be independently toggled, dragged, resized, and arranged acr
 
 | Panel | Purpose |
 |---|---|
-| **Explorer** | Directory tree with expand/collapse navigation |
-| **Terminal** | Live xterm.js shell connected to a native PTY |
-| **Code** | Read-only (or Safe Edit) file viewer with live diff |
+| **Explorer** | Directory tree with expand/collapse navigation, inline create/rename/delete, and a right-click context menu |
+| **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY |
+| **Code** | Read-only (or Safe Edit) file viewer with live diff and inline hex colour swatches |
 | **Localhost** | Active port tracker with one-click process termination |
-| **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI |
+| **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip |
 | **Preview** | Live preview launcher — opens a standalone native window |
 
 Panels snap to the grid, resize from all eight edges, and resolve collisions without flying off-screen.
+
+#### Inline colour swatches
+
+The Code viewer scans file contents for CSS hex colour literals (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`) and renders a small colour chip immediately before each value, the way VS Code does. Decoration is skipped above 200 KB so large files stay responsive.
+
+#### Floating menus
+
+Right-click menus and popovers render through a portal into `document.body` (`FloatingMenu`). Because react-grid-layout applies a `transform` to each panel, a normal `position: fixed` menu would be trapped and clipped by the panel's `overflow: hidden`; the portal lifts menus onto the top layer above every panel and clamps them to stay fully on-screen.
 
 ### Iris command bar
 
@@ -130,7 +140,18 @@ Five structural theme engines swap the entire visual character of the applicatio
 
 Each engine defines ~50 CSS custom properties (`--rt-bg`, `--rt-surface`, `--rt-accent`, `--rt-backdrop`, `--rt-shadow-panel`, etc.). Components use semantic utility classes (`.rt-panel`, `.rt-btn`, `.rt-menu`) that read the tokens — no per-component theme logic.
 
-The xterm.js terminal color table is also engine-specific. The `blue`/`brightBlue` ANSI slots are set to each engine's accent color so Claude CLI selection highlights match the active theme.
+The xterm.js terminal color table is also engine-specific. Only the **cursor** and **selection** track the active accent — the selection is painted as a solid accent fill with white text so a highlight inside the Terminal reads identically to the web `::selection` highlight in the Code panel. The ANSI palette slots (`red`, `blue`, `green`, …) are left untouched so terminal apps like the Claude CLI render their own UI colours correctly.
+
+**Soft Pastel** additionally derives its background — both the base tint and the ambient radial glows — from the live accent via `color-mix`, so choosing a new accent re-tints the whole backdrop instead of leaving a static wash.
+
+### Customization & the Settings overlay
+
+A centred, frosted-glass **Settings overlay** centralizes all customization behind one gear button (available from both the Launch Hub and the workspace toolbar). It is organized into four tabs, and every change is written straight to the persisted Zustand store (mirrored to `settings.json`), so it survives restarts:
+
+- **Theme** — visual preview cards for the five engines, an accent-colour picker (presets + custom hex/colour input), "Save as preset" to capture the current theme + accent as a reusable custom preset, and a one-click revert to the engine's brand accent. Preview cards paint in their own palette, so a dark card keeps light text (and vice-versa) regardless of the active theme.
+- **Appearance** — top-bar style (icons only vs. icons + labels), panel-toggle style (dropdown vs. icon strip), and a global **workspace text scale** slider (80–130 %) that drives the root `font-size` so every rem-based element scales together.
+- **Font** — pick from the bundled typeface "personalities" (Inter, Space Grotesk, Nunito, JetBrains Mono) or **upload your own** `.ttf`/`.otf`. Uploaded files are copied by Rust into `<data_dir>/Retermina/fonts`, registered at runtime with the `FontFace` Web API (bytes flow through Rust as base64, so no `asset://` scope is needed), and can be assigned to a thematic category.
+- **Version** — shows the current app version and a **Check for Updates** button that drives the `@tauri-apps/plugin-updater` flow (download with progress → relaunch via `@tauri-apps/plugin-process`).
 
 ### Live file diff viewer
 
@@ -171,6 +192,8 @@ npm install
 npm run tauri dev    # development
 npm run tauri build  # production bundle
 ```
+
+> **Self-updates:** the `updater` config in `src-tauri/tauri.conf.json` ships with a placeholder endpoint and public key. "Check for Updates" will report that it can't reach the update server until you point `plugins.updater.endpoints` at a real release feed and replace `pubkey` with the public half of your own signing key (`npm run tauri signer generate`). Builds must be signed with the matching private key for updates to verify.
 
 ---
 

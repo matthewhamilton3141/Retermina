@@ -15,6 +15,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   type ReactNode,
@@ -29,7 +30,8 @@ import {
   type ThemeId,
   type ThemeMeta,
 } from "../lib/theme";
-import { FONT_BY_ID } from "../lib/fonts";
+import { FONT_BY_ID, customFontStack } from "../lib/fonts";
+import { registerAllCustomFonts } from "../lib/fontRegistry";
 
 export interface ThemeContextValue {
   /** The active engine id. */
@@ -73,9 +75,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setTheme    = useAppStore((state) => state.setTheme);
   const accentColor = useAppStore((state) => state.accentColor);
   const fontId      = useAppStore((state) => state.fontId);
+  const uiScale     = useAppStore((state) => state.uiScale);
+  const customFonts = useAppStore((state) => state.customFonts);
 
   // Tolerate an unknown persisted id by resolving to the default engine.
   const theme = resolveTheme(themeId);
+
+  // Register every uploaded font with the document so a persisted `fontId`
+  // pointing at a custom family actually resolves after a restart.
+  useEffect(() => {
+    if (customFonts.length) void registerAllCustomFonts(customFonts);
+  }, [customFonts]);
 
   // Apply the data-theme attribute and optional accent override before paint.
   useLayoutEffect(() => {
@@ -94,27 +104,45 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       el.style.removeProperty("--rt-grid-placeholder");
     }
 
-    // Font family override
-    const font = FONT_BY_ID[fontId];
-    if (font?.stack) {
-      el.style.setProperty("--rt-font-sans", font.stack);
+    // Font family override — built-in stack, or an uploaded custom family.
+    const builtIn = FONT_BY_ID[fontId];
+    const custom  = customFonts.find((f) => f.id === fontId);
+    const stack   = builtIn?.stack ?? (custom ? customFontStack(custom.family) : null);
+    if (stack) {
+      el.style.setProperty("--rt-font-sans", stack);
     } else {
       el.style.removeProperty("--rt-font-sans");
     }
-  }, [theme.id, accentColor, fontId]);
+
+    // Global workspace text scale: driving the root font-size scales every
+    // rem-based Tailwind utility across the app in one stroke (100% → 16px).
+    if (uiScale !== 100) {
+      el.style.fontSize = `${(uiScale / 100) * 16}px`;
+    } else {
+      el.style.removeProperty("font-size");
+    }
+  }, [theme.id, accentColor, fontId, customFonts, uiScale]);
 
   // Overlay accent-dependent terminal colours so cursor + selection track the
-  // live accent choice. Only cursor and selectionBackground are overridden —
-  // the ANSI colour palette slots (red, blue, green, …) are left untouched
-  // because terminal apps like Claude Code use them for their own UI colours.
+  // live accent choice. Only cursor and selection are overridden — the ANSI
+  // colour palette slots (red, blue, green, …) are left untouched because
+  // terminal apps like Claude Code use them for their own UI colours.
+  //
+  // The selection is painted as a SOLID accent fill with white text to mirror
+  // the web `::selection` look (see index.css), so a highlight inside the
+  // Terminal reads identically to one inside the Code window.
   const terminalTheme = useMemo<ITheme>(() => {
-    if (!accentColor || !/^#[0-9a-fA-F]{6}$/.test(accentColor)) {
-      return theme.terminal;
-    }
+    // Resolve the active accent: explicit override, else the engine's brand.
+    const accent =
+      accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor)
+        ? accentColor
+        : theme.accentColor;
     return {
       ...theme.terminal,
-      cursor:              accentColor,
-      selectionBackground: hexToRgba(accentColor, 0.25),
+      cursor:              accent,
+      selectionBackground: accent,
+      selectionForeground: "#ffffff",
+      selectionInactiveBackground: hexToRgba(accent, 0.45),
     };
   }, [theme, accentColor]);
 
