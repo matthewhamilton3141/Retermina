@@ -68,6 +68,16 @@ export async function validateDirectory(path: string): Promise<boolean> {
   return invoke<boolean>("validate_directory", { path });
 }
 
+/** Read the raw Retermina Loom presets document (empty string if none yet). */
+export async function readPresets(): Promise<string> {
+  return invoke<string>("read_presets");
+}
+
+/** Overwrite the presets document with the serialized store state. */
+export async function writePresets(data: string): Promise<void> {
+  return invoke<void>("write_presets", { data });
+}
+
 export interface ClaudeTokenUsage {
   inputTokens: number;
   outputTokens: number;

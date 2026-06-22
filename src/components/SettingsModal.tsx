@@ -12,15 +12,47 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 
 import Icon, { type IconName } from "./Icon";
+import LoomManager from "./LoomManager";
 import { useTheme } from "../theme/ThemeProvider";
 import { useAppStore, type ToolbarStyle, type TopBarStyle, type CustomFont } from "../store/app";
 import type { ThemeId } from "../lib/theme";
 import {
   FONTS,
   FONT_CATEGORIES,
+  THEME_FONT_CATEGORY,
   customFontStack,
+  fontIdForCategory,
 } from "../lib/fonts";
 import { registerCustomFont } from "../lib/fontRegistry";
+
+/** Resolve a font id (built-in or uploaded) to its display name. */
+function fontLabel(id: string, customFonts: readonly CustomFont[]): string {
+  const builtIn = FONTS.find((f) => f.id === id);
+  if (builtIn) return builtIn.name;
+  return customFonts.find((f) => f.id === id)?.name ?? "Font";
+}
+
+/** Small accent-coloured toggle switch. */
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="relative h-5 w-9 shrink-0 rounded-full transition-colors"
+      style={{ backgroundColor: checked ? "var(--rt-accent)" : "var(--rt-surface-hover)" }}
+    >
+      <span
+        className="absolute top-0.5 h-4 w-4 rounded-full shadow transition-all"
+        style={{
+          left: checked ? "1.125rem" : "0.125rem",
+          backgroundColor: checked ? "var(--rt-accent-contrast, #fff)" : "#fff",
+        }}
+      />
+    </button>
+  );
+}
 
 // ── Shared data ──────────────────────────────────────────────────────────────
 
@@ -133,7 +165,7 @@ function PreviewCard({
                 boxShadow: isBrutalism ? "2px 2px 0 0 #000" : "none",
               }}
             >
-              <div className="h-1 w-3 bg-white opacity-80" style={{ borderRadius: lineRadius }} />
+              <div className="h-1 w-3 opacity-80" style={{ borderRadius: lineRadius, backgroundColor: "var(--rt-accent-contrast, #fff)" }} />
             </div>
           </div>
 
@@ -147,7 +179,7 @@ function PreviewCard({
               }}
             >
               <svg viewBox="0 0 8 8" fill="none" className="h-2 w-2">
-                <path d="M1 4l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M1 4l2 2 4-4" style={{ stroke: "var(--rt-accent-contrast, #fff)" }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
           )}
@@ -205,7 +237,7 @@ function RadioGroup<T extends string>({
             <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
               active ? "border-[var(--rt-accent)] bg-[var(--rt-accent)]" : "border-[var(--rt-border)]"
             }`}>
-              {active && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+              {active && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--rt-accent-contrast, #fff)" }} />}
             </span>
             <span>
               <span className="block text-sm font-medium">{label}</span>
@@ -236,10 +268,20 @@ function ThemeTab() {
   const accentColor       = useAppStore((s) => s.accentColor);
   const setAccentColor    = useAppStore((s) => s.setAccentColor);
   const saveCustomTheme   = useAppStore((s) => s.saveCustomTheme);
+  const customFonts       = useAppStore((s) => s.customFonts);
+  const fontId            = useAppStore((s) => s.fontId);
+  const setFontId         = useAppStore((s) => s.setFontId);
+  const autoPairFont      = useAppStore((s) => s.autoPairFont);
+  const setAutoPairFont   = useAppStore((s) => s.setAutoPairFont);
 
   const [presetName, setPresetName] = useState("");
   const [saving, setSaving]         = useState(false);
   const activeHex = accentColor ?? null;
+
+  // Font pairing — the category that "belongs to" this theme, and the best
+  // matching font for it (uploaded fonts win over built-ins).
+  const pairCategory = THEME_FONT_CATEGORY[themeId];
+  const suggestedId  = pairCategory ? fontIdForCategory(pairCategory, customFonts) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -385,6 +427,53 @@ function ThemeTab() {
           </button>
         )}
       </section>
+
+      {/* Font pairing (#1 suggest-on-switch + #3 auto-pair toggle) */}
+      <section>
+        <SectionTitle>Font pairing</SectionTitle>
+        <div className="rt-card flex flex-col gap-3 p-3">
+          <label className="flex cursor-pointer items-center justify-between gap-3">
+            <span>
+              <span className="block text-sm font-medium">Match font to theme</span>
+              <span className="rt-text-faint block text-xs">
+                Switching themes also picks the font categorized for it.
+              </span>
+            </span>
+            <Switch checked={autoPairFont} onChange={setAutoPairFont} />
+          </label>
+
+          {pairCategory && suggestedId ? (
+            <div className="flex items-center justify-between gap-3 border-t border-[var(--rt-border)] pt-3">
+              <span className="min-w-0 text-xs">
+                <span className="rt-text-faint">Suggested: </span>
+                <span className="font-medium">{fontLabel(suggestedId, customFonts)}</span>
+                <span className="rt-text-faint"> · {pairCategory}</span>
+              </span>
+              {fontId === suggestedId ? (
+                <span className="shrink-0 text-xs text-[var(--rt-accent)]">Applied</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFontId(suggestedId)}
+                  className="rt-btn-outline shrink-0 px-2.5 py-1 text-xs"
+                >
+                  Apply
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="rt-text-faint border-t border-[var(--rt-border)] pt-3 text-xs">
+              This theme has no signature font — choose any in the Font tab.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Retermina Loom — preset management (save / apply / export / import) */}
+      <section>
+        <SectionTitle>Retermina Loom</SectionTitle>
+        <LoomManager />
+      </section>
     </div>
   );
 }
@@ -470,6 +559,7 @@ interface PendingUpload {
 }
 
 function FontTab() {
+  const { themeId }     = useTheme();
   const fontId          = useAppStore((s) => s.fontId);
   const setFontId       = useAppStore((s) => s.setFontId);
   const customFonts     = useAppStore((s) => s.customFonts);
@@ -550,7 +640,7 @@ function FontTab() {
           <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
             active ? "border-[var(--rt-accent)] bg-[var(--rt-accent)]" : "border-[var(--rt-border)]"
           }`}>
-            {active && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+            {active && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--rt-accent-contrast, #fff)" }} />}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium" style={stack ? { fontFamily: stack } : undefined}>{name}</span>
@@ -572,18 +662,27 @@ function FontTab() {
     );
   };
 
+  // Category that belongs to the active theme — its group gets a badge.
+  const themeCategory = THEME_FONT_CATEGORY[themeId];
+  const defaultFont = FONTS.find((f) => f.id === "default");
+
+  // Bucket every font (built-in + uploaded) under its category, in the
+  // canonical category order; only non-empty groups are shown. Unknown custom
+  // categories fall back to "Uncategorized" so a font never disappears.
+  const groups = FONT_CATEGORIES.map((cat) => ({
+    cat,
+    builtIns: FONTS.filter((f) => f.category === cat),
+    customs: customFonts.filter(
+      (f) => (FONT_CATEGORIES.includes(f.category) ? f.category : "Uncategorized") === cat,
+    ),
+  })).filter((g) => g.builtIns.length > 0 || g.customs.length > 0);
+
   return (
     <div className="flex flex-col gap-6">
-      <section>
-        <SectionTitle>Built-in</SectionTitle>
-        <div className="flex flex-col gap-2">
-          {FONTS.map((f) => renderFontRow(f.id, f.name, f.description, f.stack ?? undefined))}
-        </div>
-      </section>
-
+      {/* Upload */}
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <SectionTitle>Your fonts</SectionTitle>
+          <SectionTitle>Add a font</SectionTitle>
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
@@ -598,7 +697,7 @@ function FontTab() {
 
         {/* Pending upload — name + category before commit */}
         {pending && (
-          <div className="rt-card mb-3 flex flex-col gap-3 p-3">
+          <div className="rt-card flex flex-col gap-3 p-3">
             <p className="text-xs font-medium">New font · <span className="rt-text-faint font-mono">{pending.fileName}</span></p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
@@ -611,6 +710,7 @@ function FontTab() {
                 value={pending.category}
                 onChange={(e) => setPending({ ...pending, category: e.target.value })}
                 className="rt-input px-2 py-1.5 text-sm"
+                title="Assign this font to a thematic category"
               >
                 {FONT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -625,28 +725,35 @@ function FontTab() {
             </div>
           </div>
         )}
+      </section>
 
-        {customFonts.length === 0 && !pending ? (
-          <div className="rt-empty p-4 text-center">
-            <p className="rt-text-faint text-xs">
-              No uploaded fonts yet. Upload a <span className="font-mono">.ttf</span> or
-              {" "}<span className="font-mono">.otf</span> to use a custom typeface.
-            </p>
-          </div>
-        ) : (
+      {/* System / default */}
+      {defaultFont && (
+        <section>
+          <SectionTitle>System</SectionTitle>
+          {renderFontRow(defaultFont.id, defaultFont.name, defaultFont.description, defaultFont.stack ?? undefined)}
+        </section>
+      )}
+
+      {/* Grouped by thematic category */}
+      {groups.map((g) => (
+        <section key={g.cat}>
+          <p className="rt-text-faint mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest">
+            {g.cat}
+            {g.cat === themeCategory && (
+              <span className="rt-badge rounded px-1.5 py-0 text-[9px] normal-case tracking-normal">
+                Theme match
+              </span>
+            )}
+          </p>
           <div className="flex flex-col gap-2">
-            {customFonts.map((f) =>
-              renderFontRow(
-                f.id,
-                f.name,
-                f.category,
-                customFontStack(f.family),
-                () => removeCustomFont(f.id),
-              ),
+            {g.builtIns.map((f) => renderFontRow(f.id, f.name, f.description, f.stack ?? undefined))}
+            {g.customs.map((f) =>
+              renderFontRow(f.id, f.name, "Uploaded", customFontStack(f.family), () => removeCustomFont(f.id)),
             )}
           </div>
-        )}
-      </section>
+        </section>
+      ))}
     </div>
   );
 }

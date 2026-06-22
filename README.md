@@ -14,10 +14,11 @@ Retermina is a native desktop application built with [Tauri v2](https://v2.tauri
 - **File system** — `list_dir`, `read_file`, `write_file`, `create_file`, `create_dir`, `rename_path`, `delete_path` commands with a 5 MB read cap and UTF-8 validation, plus `suggest_directories` / `validate_directory` backing the Launch Hub's autocompleting "Open Folder" field.
 - **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
 - **Claude usage** (`claude_stats.rs`) — parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost.
+- **Loom presets** (`presets.rs`) — `read_presets` / `write_presets` persist the preset library to `<data_dir>/Retermina/presets.json`, serving as the Tauri-file storage backend for the Loom store.
 - **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata to the Iris command bar.
 - **Port discovery** — `lsof` / `netstat` parsing to surface active local servers in the Localhost Tracker panel.
 
-IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. The `updater` and `process` plugins back the Settings → Version self-update flow. All window actions (drag, close, minimize, maximize) and plugin permissions are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed.
+IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. The `updater` + `process` plugins back the Settings → Version self-update flow, and the `dialog` plugin powers Loom export/import file pickers. All window actions (drag, close, minimize, maximize, animated resize) and plugin permissions are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed.
 
 ### Workspace grid — powered by react-grid-layout
 
@@ -140,7 +141,9 @@ Five structural theme engines swap the entire visual character of the applicatio
 
 Each engine defines ~50 CSS custom properties (`--rt-bg`, `--rt-surface`, `--rt-accent`, `--rt-backdrop`, `--rt-shadow-panel`, etc.). Components use semantic utility classes (`.rt-panel`, `.rt-btn`, `.rt-menu`) that read the tokens — no per-component theme logic.
 
-The xterm.js terminal color table is also engine-specific. Only the **cursor** and **selection** track the active accent — the selection is painted as a solid accent fill with white text so a highlight inside the Terminal reads identically to the web `::selection` highlight in the Code panel. The ANSI palette slots (`red`, `blue`, `green`, …) are left untouched so terminal apps like the Claude CLI render their own UI colours correctly.
+The xterm.js terminal color table is also engine-specific. Only the **cursor** and **selection** track the active accent — the selection is painted as a solid accent fill so a highlight inside the Terminal reads identically to the web `::selection` highlight in the Code panel. The ANSI palette slots (`red`, `blue`, `green`, …) are left untouched so terminal apps like the Claude CLI render their own UI colours correctly.
+
+Selection (and other content drawn _on_ the accent — checkmarks, radio dots, the toggle knob) uses a **contrast-aware foreground**: ThemeProvider computes a `--rt-accent-contrast` token from the accent's WCAG luminance and picks near-black or white, whichever reads better. So a light custom accent (e.g. white) no longer turns highlights into blank, unreadable blocks.
 
 **Soft Pastel** additionally derives its background — both the base tint and the ambient radial glows — from the live accent via `color-mix`, so choosing a new accent re-tints the whole backdrop instead of leaving a static wash.
 
@@ -148,10 +151,26 @@ The xterm.js terminal color table is also engine-specific. Only the **cursor** a
 
 A centred, frosted-glass **Settings overlay** centralizes all customization behind one gear button (available from both the Launch Hub and the workspace toolbar). It is organized into four tabs, and every change is written straight to the persisted Zustand store (mirrored to `settings.json`), so it survives restarts:
 
-- **Theme** — visual preview cards for the five engines, an accent-colour picker (presets + custom hex/colour input), "Save as preset" to capture the current theme + accent as a reusable custom preset, and a one-click revert to the engine's brand accent. Preview cards paint in their own palette, so a dark card keeps light text (and vice-versa) regardless of the active theme.
+- **Theme / Retermina Loom** — visual preview cards for the five engines, an accent-colour picker (presets + custom hex/colour input), "Save as preset", and a one-click revert to the engine's brand accent. Preview cards paint in their own palette, so a dark card keeps light text (and vice-versa) regardless of the active theme. A **Font pairing** control suggests (and optionally auto-applies) the font categorized for the active theme, and the **Retermina Loom** preset manager lives here (see below).
 - **Appearance** — top-bar style (icons only vs. icons + labels), panel-toggle style (dropdown vs. icon strip), and a global **workspace text scale** slider (80–130 %) that drives the root `font-size` so every rem-based element scales together.
-- **Font** — pick from the bundled typeface "personalities" (Inter, Space Grotesk, Nunito, JetBrains Mono) or **upload your own** `.ttf`/`.otf`. Uploaded files are copied by Rust into `<data_dir>/Retermina/fonts`, registered at runtime with the `FontFace` Web API (bytes flow through Rust as base64, so no `asset://` scope is needed), and can be assigned to a thematic category.
+- **Font** — fonts are grouped by thematic category. Pick from the bundled typefaces (Inter, Space Grotesk, Nunito, JetBrains Mono) or **upload your own** `.ttf`/`.otf`. Uploaded files are copied by Rust into `<data_dir>/Retermina/fonts`, registered at runtime with the `FontFace` Web API (bytes flow through Rust as base64, so no `asset://` scope is needed), and assigned to a category that drives theme pairing.
 - **Version** — shows the current app version and a **Check for Updates** button that drives the `@tauri-apps/plugin-updater` flow (download with progress → relaunch via `@tauri-apps/plugin-process`).
+
+### Retermina Loom — portable preset system
+
+A **Loom** is a single JSON document that bundles a complete app configuration — both halves of the experience:
+
+- **Cosmetic** — theme engine, accent colour, top-bar/toolbar style, font, and global text scale.
+- **Structural** — the full react-grid-layout topology (coordinates + sizes), the panels it hosts, and per-panel text-zoom overrides.
+
+The **Manage Presets** panel (in the Theme / Retermina Loom tab) lets you name and **Save Current Layout**, **Apply** any saved Loom (the theme re-skins and the grid re-mounts in real time), **Delete**, and **Export** / **Import from Loom**:
+
+- **Persistence** — the library is stored as `presets.json` under the app data directory via the Rust `read_presets` / `write_presets` commands (a Tauri-file-backed Zustand storage), independent of localStorage.
+- **Export / Import** — uses Tauri's `dialog.save` / `dialog.open` plugin to write/read a shareable `.json` file. An exported Loom can embed the bytes of a referenced custom font, so on import the typeface is reinstalled automatically and the preset's font resolves on another machine.
+- **Graceful fallback** — every load runs through a schema validator (`parsePreset`); corrupt or partial layout data degrades to the default grid instead of crashing the window.
+- **Privacy** — a Loom captures _only_ layout geometry + panel identity and cosmetic settings. It never serializes live-session state: no PTY/terminal buffers, no working directory, no open-file paths or contents. Presets stay local (`presets.json` or a file you choose) — nothing is uploaded anywhere.
+
+> A separate, lightweight **Presets** menu in the toolbar persists layout-only snapshots (no theme) to localStorage for quick in-session switching; it coexists with Looms.
 
 ### Live file diff viewer
 
@@ -175,6 +194,8 @@ Every folder opened in Retermina is recorded in a native localStorage history (m
 ### Custom title bar
 
 `decorations: false` + `transparent: true` + `macOSPrivateApi: true` gives Retermina full control of the window chrome. A custom title bar renders macOS traffic light buttons and handles window dragging via an explicit `onMouseDown → appWindow.startDragging()` call — not `data-tauri-drag-region`, which would intercept mid-panel-drag mousemove events and break the grid.
+
+**Double-click to maximize** is animated rather than an instant snap: instead of the OS's immediate toggle, the title bar tweens the window's outer bounds (with `requestAnimationFrame` + an `easeOutCubic` curve) between the restored rect and the monitor's `workArea` — so maximize/restore eases smoothly and still respects the dock/menu bar. It honours `prefers-reduced-motion` (instant jump) and falls back to the native toggle if the monitor can't be resolved.
 
 ---
 

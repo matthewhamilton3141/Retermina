@@ -1,8 +1,12 @@
+import type { ThemeId } from "./theme";
+
 /** Named font options for decoupled typography. */
 export interface FontOption {
   id: string;
   name: string;
   description: string;
+  /** Thematic category (matches {@link FONT_CATEGORIES}); omitted for Default. */
+  category?: string;
   /** CSS font-family stack, or null for system default (no override). */
   stack: string | null;
 }
@@ -16,26 +20,30 @@ export const FONTS: readonly FontOption[] = [
   },
   {
     id: "inter",
-    name: "Minimalist",
-    description: "Inter — clean, precise, and highly legible",
+    name: "Inter",
+    description: "Clean, precise, and highly legible",
+    category: "Minimalist",
     stack: '"Inter", system-ui, sans-serif',
   },
   {
     id: "space-grotesk",
-    name: "Neo-brutalism",
-    description: "Space Grotesk — bold, geometric, and assertive",
+    name: "Space Grotesk",
+    description: "Bold, geometric, and assertive",
+    category: "Neo-brutalism",
     stack: '"Space Grotesk", system-ui, sans-serif',
   },
   {
     id: "nunito",
-    name: "Soft Pastel",
-    description: "Nunito — rounded, friendly, and warm",
+    name: "Nunito",
+    description: "Rounded, friendly, and warm",
+    category: "Soft Pastel",
     stack: '"Nunito", ui-rounded, system-ui, sans-serif',
   },
   {
     id: "jetbrains-mono",
-    name: "Terminal",
-    description: "JetBrains Mono — high-readability monospace",
+    name: "JetBrains Mono",
+    description: "High-readability monospace",
+    category: "Terminal",
     stack: '"JetBrains Mono", "Fira Code", ui-monospace, monospace',
   },
 ];
@@ -61,4 +69,38 @@ export const FONT_CATEGORIES: readonly string[] = [
 /** Build a CSS font-family stack for an uploaded font's registered family. */
 export function customFontStack(family: string): string {
   return `"${family}", system-ui, sans-serif`;
+}
+
+/**
+ * Which font category "belongs to" each theme engine. Three engines share a
+ * name with a font personality; Sleek and Transparent Glass have no canonical
+ * pairing, so they map to `undefined` (no suggestion / no auto-pair).
+ */
+export const THEME_FONT_CATEGORY: Record<ThemeId, string | undefined> = {
+  minimalist: "Minimalist",
+  brutalism:  "Neo-brutalism",
+  pastel:     "Soft Pastel",
+  sleek:      undefined,
+  glass:      undefined,
+};
+
+/** Minimal shape needed to resolve a categorized font (built-in or uploaded). */
+interface CategorizedFont {
+  id: string;
+  category?: string;
+}
+
+/**
+ * Resolve the best font id for a category: a user-uploaded font wins over a
+ * built-in (uploads are prepended newest-first), otherwise the bundled match.
+ * Returns null when nothing in the category exists.
+ */
+export function fontIdForCategory(
+  category: string,
+  customFonts: readonly CategorizedFont[],
+): string | null {
+  const custom = customFonts.find((f) => f.category === category);
+  if (custom) return custom.id;
+  const builtIn = FONTS.find((f) => f.category === category);
+  return builtIn ? builtIn.id : null;
 }

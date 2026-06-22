@@ -254,10 +254,13 @@ body,
 
 /* ── Global accent reflection ──────────────────────────────────────────── */
 
-/* Text selection uses the accent colour so it matches the theme. */
+/* Text selection uses the accent colour so it matches the theme. The text
+ * colour is contrast-aware (set by ThemeProvider) so a light accent like white
+ * still shows the selected text instead of a blank block; it falls back to
+ * white for the built-in engines, whose accents are all dark enough. */
 ::selection {
   background-color: var(--rt-accent);
-  color: #fff;
+  color: var(--rt-accent-contrast, #fff);
 }
 
 /* Thin, accent-tinted scrollbars across the app. */

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from "../lib/theme";
+import { THEME_FONT_CATEGORY, fontIdForCategory } from "../lib/fonts";
 import { useRecentStore } from "./recent";
 import { useSessionStore } from "./session";
 
@@ -38,6 +39,8 @@ interface AppState {
   topBarStyle: TopBarStyle;
   accentColor: string | null;
   fontId: string;
+  /** When true, switching theme also swaps the font to the theme's category. */
+  autoPairFont: boolean;
   /** Global workspace text scale as a percentage (80–130). */
   uiScale: number;
   customThemes: CustomTheme[];
@@ -50,6 +53,7 @@ interface AppState {
   setTopBarStyle: (style: TopBarStyle) => void;
   setAccentColor: (color: string | null) => void;
   setFontId: (id: string) => void;
+  setAutoPairFont: (on: boolean) => void;
   setUiScale: (scale: number) => void;
   saveCustomTheme: (name: string) => void;
   removeCustomTheme: (id: string) => void;
@@ -71,6 +75,7 @@ export const useAppStore = create<AppState>()(
       topBarStyle: "icon-only",
       accentColor: null,
       fontId: "default",
+      autoPairFont: false,
       uiScale: 100,
       customThemes: [],
       customFonts: [],
@@ -86,11 +91,28 @@ export const useAppStore = create<AppState>()(
         useSessionStore.getState().clear();
         set({ view: "launch", workspaceCwd: null });
       },
-      setTheme: (id) => set({ themeId: id }),
+      setTheme: (id) => {
+        set({ themeId: id });
+        // Auto-pair: adopt the font categorized for this theme, if enabled.
+        if (get().autoPairFont) {
+          const category = THEME_FONT_CATEGORY[id];
+          const match = category ? fontIdForCategory(category, get().customFonts) : null;
+          if (match) set({ fontId: match });
+        }
+      },
       setToolbarStyle: (style) => set({ toolbarStyle: style }),
       setTopBarStyle: (style) => set({ topBarStyle: style }),
       setAccentColor: (color) => set({ accentColor: color }),
       setFontId: (id) => set({ fontId: id }),
+      setAutoPairFont: (on) => {
+        set({ autoPairFont: on });
+        // Turning it on immediately pairs the current theme's font.
+        if (on) {
+          const category = THEME_FONT_CATEGORY[get().themeId];
+          const match = category ? fontIdForCategory(category, get().customFonts) : null;
+          if (match) set({ fontId: match });
+        }
+      },
       setUiScale: (scale) => set({ uiScale: Math.max(80, Math.min(130, Math.round(scale))) }),
 
       saveCustomTheme: (name) => {
@@ -128,6 +150,7 @@ export const useAppStore = create<AppState>()(
         topBarStyle: s.topBarStyle,
         accentColor: s.accentColor,
         fontId: s.fontId,
+        autoPairFont: s.autoPairFont,
         uiScale: s.uiScale,
         customThemes: s.customThemes,
         customFonts: s.customFonts,
@@ -146,10 +169,11 @@ export const useAppStore = create<AppState>()(
           : p?.accentColor === null ? null
           : current.accentColor;
         const fontId = typeof p?.fontId === "string" ? p.fontId : current.fontId;
+        const autoPairFont = typeof p?.autoPairFont === "boolean" ? p.autoPairFont : current.autoPairFont;
         const uiScale = typeof p?.uiScale === "number" ? p.uiScale : current.uiScale;
         const customThemes = Array.isArray(p?.customThemes) ? p!.customThemes : current.customThemes;
         const customFonts = Array.isArray(p?.customFonts) ? p!.customFonts : current.customFonts;
-        return { ...current, themeId, toolbarStyle, topBarStyle, accentColor, fontId, uiScale, customThemes, customFonts };
+        return { ...current, themeId, toolbarStyle, topBarStyle, accentColor, fontId, autoPairFont, uiScale, customThemes, customFonts };
       },
     },
   ),

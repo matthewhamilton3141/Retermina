@@ -70,6 +70,31 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+/** WCAG relative luminance of a 6-digit hex colour (0 = black, 1 = white). */
+function relativeLuminance(hex: string): number {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const chan = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const r = chan((n >> 16) & 255);
+  const g = chan((n >> 8)  & 255);
+  const b = chan( n        & 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * Pick the text colour (near-black or white) with the better contrast ratio
+ * against `hex`. This keeps text legible on top of any accent — without it, a
+ * light accent like white turns selection highlights into blank blocks.
+ */
+function accentContrast(hex: string): string {
+  const L = relativeLuminance(hex);
+  const contrastWhite = 1.05 / (L + 0.05);
+  const contrastBlack = (L + 0.05) / 0.05;
+  return contrastWhite >= contrastBlack ? "#ffffff" : "#0a0a0a";
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const themeId     = useAppStore((state) => state.themeId);
   const setTheme    = useAppStore((state) => state.setTheme);
@@ -97,11 +122,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       el.style.setProperty("--rt-accent-soft",       hexToRgba(accentColor, 0.12));
       el.style.setProperty("--rt-ring",              hexToRgba(accentColor, 0.5));
       el.style.setProperty("--rt-grid-placeholder",  accentColor);
+      // Contrast-aware text colour for anything placed ON the accent (text
+      // selection, checkmarks, dots) so a light accent never hides content.
+      el.style.setProperty("--rt-accent-contrast",   accentContrast(accentColor));
     } else {
       el.style.removeProperty("--rt-accent");
       el.style.removeProperty("--rt-accent-soft");
       el.style.removeProperty("--rt-ring");
       el.style.removeProperty("--rt-grid-placeholder");
+      el.style.removeProperty("--rt-accent-contrast");
     }
 
     // Font family override — built-in stack, or an uploaded custom family.
@@ -141,7 +170,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       ...theme.terminal,
       cursor:              accent,
       selectionBackground: accent,
-      selectionForeground: "#ffffff",
+      // Contrast-aware so a light accent (e.g. white) doesn't render the
+      // highlighted text as an unreadable solid block.
+      selectionForeground: accentContrast(accent),
       selectionInactiveBackground: hexToRgba(accent, 0.45),
     };
   }, [theme, accentColor]);

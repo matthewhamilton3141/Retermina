@@ -2,6 +2,7 @@ mod claude_stats;
 mod fonts;
 mod fs;
 mod iris;
+mod presets;
 mod localhost;
 mod pty;
 mod terminal_import;
@@ -19,6 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(pty::PtyManager::default())
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -45,7 +47,9 @@ pub fn run() {
             fonts::save_font,
             fonts::read_font,
             fonts::list_fonts,
-            fonts::delete_font
+            fonts::delete_font,
+            presets::read_presets,
+            presets::write_presets
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

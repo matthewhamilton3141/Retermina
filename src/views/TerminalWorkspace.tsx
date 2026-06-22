@@ -77,7 +77,7 @@ function PanelsDropdown({ showLabel = false }: { showLabel?: boolean }) {
                 }`}>
                   {active && (
                     <svg viewBox="0 0 10 10" fill="none" className="h-full w-full p-[1.5px]">
-                      <path d="M1.5 5l2.5 2.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M1.5 5l2.5 2.5L8.5 2.5" style={{ stroke: "var(--rt-accent-contrast, #fff)" }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   )}
                 </span>
