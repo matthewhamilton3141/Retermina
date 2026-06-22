@@ -1,7 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor } from "@tauri-apps/api/window";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+
+import Icon from "./Icon";
+import { isPreviewOpen, closePreviewWindow } from "../lib/previewWindow";
 
 const appWindow = getCurrentWebviewWindow();
 
@@ -79,6 +82,18 @@ export function TitleBar() {
   const restoreRef = useRef<Rect | null>(null);
   // Guards against re-entrancy while a tween is running.
   const animatingRef = useRef(false);
+
+  // Global preview indicator — the preview is a separate OS window that can
+  // outlive its panel (e.g. if the panel widget isn't in the current layout),
+  // so surface an always-reachable close here in the title bar.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const sync = () => isPreviewOpen().then((open) => { if (active) setPreviewOpen(open); });
+    sync();
+    const id = window.setInterval(sync, 1500);
+    return () => { active = false; window.clearInterval(id); };
+  }, []);
 
   async function toggleMaximize() {
     if (animatingRef.current) return;
@@ -196,7 +211,22 @@ export function TitleBar() {
       </div>
 
       {/* Remaining space is a drag target — cursor reinforces affordance */}
-      <div className="flex-1 h-full cursor-move" />
+      <div className="flex flex-1 h-full cursor-move items-center justify-end px-3">
+        {previewOpen && (
+          <span className="rt-badge flex items-center gap-1.5 rounded-full py-0.5 pl-2 pr-1 text-[11px] font-medium">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Preview
+            <button
+              type="button"
+              onClick={() => void closePreviewWindow()}
+              title="Close preview window"
+              className="rt-btn flex h-4 w-4 items-center justify-center rounded-full"
+            >
+              <Icon name="close" size={9} aria-label="Close preview" />
+            </button>
+          </span>
+        )}
+      </div>
     </div>
   );
 }

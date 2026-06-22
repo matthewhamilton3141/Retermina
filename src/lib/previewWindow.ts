@@ -17,6 +17,24 @@ import { listListeningPorts, killProcess } from "./system";
 
 const PREVIEW_LABEL = "preview";
 
+// Whether closing the preview window should also terminate the dev server bound
+// to its port. Defaults to true (owning the server's lifecycle is the window's
+// whole reason for existing), but the panel can flip it off when you want the
+// server to keep running after the preview closes. Module-scoped so the value
+// the native close button reads stays in sync with the panel toggle, even
+// across panel remounts.
+let killServerOnClose = true;
+
+/** Current "stop the dev server when the preview closes" preference. */
+export function getPreviewKillServerOnClose(): boolean {
+  return killServerOnClose;
+}
+
+/** Set whether closing the preview also kills its dev server. */
+export function setPreviewKillServerOnClose(value: boolean): void {
+  killServerOnClose = value;
+}
+
 /** Extract the port number from a localhost URL, or null if unparseable. */
 export function portFromUrl(url: string): number | null {
   try {
@@ -30,8 +48,9 @@ export function portFromUrl(url: string): number | null {
 /**
  * Open (or focus) the standalone preview window for `url`.
  *
- * On close the window's `onCloseRequested` handler fires; we find the PID
- * bound to `url`'s port and kill it so no zombie dev-server processes linger.
+ * On close the window's `onCloseRequested` handler closes the window, then —
+ * if `killServerOnClose` is set and the port isn't Retermina's own dev server —
+ * kills the dev server bound to `url`'s port so nothing lingers.
  */
 export async function openPreviewWindow(url: string): Promise<void> {
   // If the window already exists, close it first so we can reopen at the new URL.
@@ -57,23 +76,46 @@ export async function openPreviewWindow(url: string): Promise<void> {
     center: true,
   });
 
-  // Intercept close: kill the associated dev server before the window destroys.
+  // Take over the close so our cleanup runs deterministically. Re-entrancy
+  // guard: a second close request (impatient double-click, or our own
+  // closePreviewWindow racing the native button) would otherwise double-destroy
+  // and bounce window focus — the flicker that looked like a Focus-mode toggle.
+  let closing = false;
   win.onCloseRequested(async (event) => {
-    if (portNum !== null) {
+    // preventDefault MUST be called synchronously, before any await, or Tauri
+    // has already resolved the close by the time we get back to it.
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+
+    // Destroy first so the window always closes promptly, regardless of whether
+    // the best-effort server kill below succeeds.
+    try {
+      await win.destroy();
+    } catch {
+      // Already gone — nothing to do.
+    }
+
+    if (killServerOnClose && portNum !== null && !servesThisApp(portNum)) {
       try {
         const ports = await listListeningPorts();
         const match = ports.find((p) => p.port === portNum);
-        if (match) {
-          await killProcess(match.pid);
-        }
+        if (match) await killProcess(match.pid);
       } catch {
-        // Best-effort; don't block the close if the kill fails.
+        // Best-effort; the window is already closed.
       }
     }
-    // Allow the window to close normally.
-    event.preventDefault();  // prevent default so we can control the flow
-    await win.destroy();
   });
+}
+
+/**
+ * True when `port` is the origin serving Retermina itself — i.e. the Vite dev
+ * server during `tauri dev`. Killing that on close would tear down the main
+ * window's own dev server and make the app reload, so we never do it.
+ */
+function servesThisApp(port: number): boolean {
+  const own = window.location.port;
+  return own !== "" && parseInt(own, 10) === port;
 }
 
 /** True if the preview window is currently open. */
@@ -82,7 +124,11 @@ export async function isPreviewOpen(): Promise<boolean> {
   return win !== null;
 }
 
-/** Close the preview window and kill its server, if open. */
+/**
+ * Close the preview window if open. Routes through `win.close()` so the
+ * `onCloseRequested` handler runs — meaning the dev server is killed or kept
+ * per the current `killServerOnClose` preference, same as the native button.
+ */
 export async function closePreviewWindow(): Promise<void> {
   const win = await WebviewWindow.getByLabel(PREVIEW_LABEL);
   if (win) {

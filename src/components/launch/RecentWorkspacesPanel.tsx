@@ -1,15 +1,54 @@
+import { useEffect, useState } from "react";
+
 import Icon from "../Icon";
-import { useRecentStore, type RecentEntry } from "../../store/recent";
+import { useRecentStore } from "../../store/recent";
+import { getRecentWorkspaces } from "../../lib/recentWorkspaces";
 import { parentDir } from "../../lib/format";
 
 export interface RecentWorkspacesPanelProps {
-  onOpen?: (entry: RecentEntry) => void;
+  onOpen?: (path: string) => void;
+}
+
+/** Strip trailing slashes so "/a/b/" and "/a/b" dedupe to the same key. */
+function normalizePath(path: string): string {
+  return path.replace(/\/+$/, "") || "/";
 }
 
 export function RecentWorkspacesPanel({ onOpen }: RecentWorkspacesPanelProps) {
   const entries = useRecentStore((s) => s.entries);
   const remove  = useRecentStore((s) => s.remove);
   const clear   = useRecentStore((s) => s.clear);
+
+  // Editor history (VSCode/Cursor/VSCodium) surfaced alongside our own recents.
+  // Scoped to existing folders — the clean match for "Recent Workspaces".
+  const [editorFolders, setEditorFolders] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    getRecentWorkspaces(20).then((items) => {
+      if (!active) return;
+      setEditorFolders(
+        items
+          .filter((it) => it.kind === "folder" && it.exists)
+          .map((it) => it.path),
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Local recents win on conflict; editor entries fill in the rest, deduped
+  // against the local set and against each other by normalized path.
+  const seen = new Set(entries.map((e) => normalizePath(e.path)));
+  const editorOnly: string[] = [];
+  for (const path of editorFolders) {
+    const key = normalizePath(path);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    editorOnly.push(path);
+  }
+
+  const isEmpty = entries.length === 0 && editorOnly.length === 0;
 
   return (
     <section className="w-full">
@@ -29,7 +68,7 @@ export function RecentWorkspacesPanel({ onOpen }: RecentWorkspacesPanelProps) {
         )}
       </div>
 
-      {entries.length === 0 ? (
+      {isEmpty ? (
         <EmptyState />
       ) : (
         <ul className="flex flex-col gap-0.5">
@@ -37,7 +76,7 @@ export function RecentWorkspacesPanel({ onOpen }: RecentWorkspacesPanelProps) {
             <li key={entry.path} className="group/row flex items-center">
               <button
                 type="button"
-                onClick={() => onOpen?.(entry)}
+                onClick={() => onOpen?.(entry.path)}
                 title={entry.path}
                 className="rt-row flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
               >
@@ -65,6 +104,36 @@ export function RecentWorkspacesPanel({ onOpen }: RecentWorkspacesPanelProps) {
               </button>
             </li>
           ))}
+
+          {/* Editor history — entries not already in our own recents. These
+              aren't ours to delete, so they have no remove button; opening one
+              records it into local recents (via openTerminal). */}
+          {editorOnly.map((path) => {
+            const name = normalizePath(path).split("/").pop() || path;
+            return (
+              <li key={`editor:${path}`} className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => onOpen?.(path)}
+                  title={path}
+                  className="rt-row flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
+                >
+                  <Icon name="folder" size={18} className="rt-row-icon shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {name}
+                    </span>
+                    <span className="rt-text-muted block truncate text-xs">
+                      {parentDir(path)}
+                    </span>
+                  </span>
+                  <span className="rt-text-faint shrink-0 text-[9px] font-semibold uppercase tracking-wide">
+                    Editor
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

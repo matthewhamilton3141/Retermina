@@ -15,6 +15,7 @@ import Icon, { type IconName } from "./Icon";
 import LoomManager from "./LoomManager";
 import { useTheme } from "../theme/ThemeProvider";
 import { useAppStore, type ToolbarStyle, type TopBarStyle, type CustomFont } from "../store/app";
+import { useUpdaterStore } from "../store/updater";
 import type { ThemeId } from "../lib/theme";
 import {
   FONTS,
@@ -760,70 +761,17 @@ function FontTab() {
 
 // ── Version tab ──────────────────────────────────────────────────────────────
 
-type UpdateState =
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "uptodate" }
-  | { kind: "available"; version: string; notes?: string }
-  | { kind: "downloading"; pct: number }
-  | { kind: "ready" }
-  | { kind: "error"; message: string };
-
 function VersionTab() {
   const [version, setVersion] = useState<string>("…");
-  const [state, setState]     = useState<UpdateState>({ kind: "idle" });
-  // Hold the resolved Update object between "check" and "install".
-  const updateRef = useRef<{ version: string; downloadAndInstall: (cb: (e: { event: string; data?: { contentLength?: number; chunkLength?: number } }) => void) => Promise<void> } | null>(null);
+  // Shared with the launch-time check + the UpdateBanner, so a found update
+  // stays consistent wherever it's surfaced.
+  const state             = useUpdaterStore((s) => s.phase);
+  const checkForUpdates   = useUpdaterStore((s) => s.check);
+  const installUpdate     = useUpdaterStore((s) => s.install);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion("unknown"));
   }, []);
-
-  const checkForUpdates = async () => {
-    setState({ kind: "checking" });
-    updateRef.current = null;
-    try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-      if (update) {
-        updateRef.current = update as never;
-        setState({ kind: "available", version: update.version, notes: update.body });
-      } else {
-        setState({ kind: "uptodate" });
-      }
-    } catch (err) {
-      setState({
-        kind: "error",
-        message:
-          "Could not reach the update server. This build may not have an update channel configured yet.",
-      });
-      console.error("Update check failed:", err);
-    }
-  };
-
-  const installUpdate = async () => {
-    const update = updateRef.current;
-    if (!update) return;
-    try {
-      let total = 0;
-      let received = 0;
-      setState({ kind: "downloading", pct: 0 });
-      await update.downloadAndInstall((event) => {
-        if (event.event === "Started") total = event.data?.contentLength ?? 0;
-        else if (event.event === "Progress") {
-          received += event.data?.chunkLength ?? 0;
-          const pct = total > 0 ? Math.round((received / total) * 100) : 0;
-          setState({ kind: "downloading", pct });
-        } else if (event.event === "Finished") setState({ kind: "ready" });
-      });
-      setState({ kind: "ready" });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (err) {
-      setState({ kind: "error", message: "The update could not be installed." });
-      console.error("Update install failed:", err);
-    }
-  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -843,7 +791,7 @@ function VersionTab() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={checkForUpdates}
+              onClick={() => checkForUpdates()}
               disabled={state.kind === "checking" || state.kind === "downloading"}
               className="rt-btn-outline flex items-center gap-2 px-3 py-1.5 text-sm disabled:opacity-50"
             >

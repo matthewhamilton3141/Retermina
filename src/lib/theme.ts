@@ -212,3 +212,21 @@ export function isThemeId(value: unknown): value is ThemeId {
 export function resolveTheme(id: unknown): ThemeMeta {
   return isThemeId(id) ? THEME_BY_ID[id] : THEME_BY_ID[DEFAULT_THEME_ID];
 }
+
+/**
+ * `COLORFGBG` value ("fg;bg" colour indices) for a terminal background hex.
+ * Light background → "0;15" (dark text on light); dark → "15;0" (light on
+ * dark). Passed into the PTY so CLI tools that probe COLORFGBG (Claude Code,
+ * vim, less) pick a legible foreground instead of assuming a dark terminal.
+ */
+export function terminalColorFgbg(background: string | undefined): string {
+  const hex = (background ?? "").replace("#", "");
+  if (hex.length < 6) return "15;0";
+  const n = parseInt(hex.slice(0, 6), 16);
+  if (Number.isNaN(n)) return "15;0";
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.5 ? "0;15" : "15;0";
+}

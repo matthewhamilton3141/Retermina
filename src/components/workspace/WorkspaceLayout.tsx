@@ -92,15 +92,6 @@ function tryResizeToFit(
   return candidates.reduce((best, c) => (c.w * c.h > best.w * best.h ? c : best));
 }
 
-/**
- * Z-index for a panel during a drag gesture.
- * Expressed in CSS (.react-draggable-dragging { z-index: 999 }) so the
- * memoized children divs are never mutated mid-gesture.
- */
-export function getPanelZIndex(panelId: string, draggingId: string | null): number {
-  return panelId === draggingId ? 999 : 10;
-}
-
 function useElementSize() {
   const ref = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<ElementSize>({ width: 0, height: 0 });

@@ -7,6 +7,7 @@ import { getClaudeTokenUsage, type ClaudeTokenUsage } from "../../lib/fs";
 import type { PanelKind } from "../../lib/workspaceLayout";
 import DiffViewer from "./DiffViewer";
 import FileExplorerPanel from "./FileExplorerPanel";
+import GitDiffPanel from "./GitDiffPanel";
 import LivePreviewPanel from "./LivePreviewPanel";
 import LocalhostPanel from "./LocalhostPanel";
 import { SplitTerminalPanel } from "./SplitTerminalPanel";
@@ -278,4 +279,5 @@ export const PANEL_RENDERERS: Record<
   localhost: () => <LocalhostPanel />,
   claudeCode: ({ cwd }) => <ClaudeCodePanel cwd={cwd} />,
   livePreview: () => <LivePreviewPanel />,
+  gitDiff: ({ cwd }) => <GitDiffPanel cwd={cwd} />,
 };

@@ -24,6 +24,10 @@ pub struct CreatePtyOptions {
     /// Initial terminal dimensions (from xterm's fit addon).
     pub cols: u16,
     pub rows: u16,
+    /// `COLORFGBG` value (e.g. `"0;15"` for dark-on-light) derived from the
+    /// active theme, so CLI tools that probe it — Claude Code, vim, less — pick
+    /// colours that stay legible instead of assuming a dark background.
+    pub color_fgbg: Option<String>,
 }
 
 /// Messages streamed from a PTY session to the frontend.
@@ -100,6 +104,13 @@ pub fn create_pty_session(
 
     let mut cmd = default_shell();
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    // Advertise the terminal's light/dark-ness so CLI tools choose readable
+    // colours. Read once at process start, so it tracks the theme active when a
+    // shell is spawned, not later live theme switches.
+    if let Some(fgbg) = options.color_fgbg.filter(|s| !s.is_empty()) {
+        cmd.env("COLORFGBG", fgbg);
+    }
     if let Some(dir) = resolve_cwd(options.cwd) {
         cmd.cwd(dir);
     }

@@ -6,8 +6,10 @@ import ThemeProvider from "./theme/ThemeProvider";
 import TitleBar from "./components/TitleBar";
 import CommandPalette from "./components/CommandPalette";
 import FileSearch from "./components/FileSearch";
+import UpdateBanner from "./components/UpdateBanner";
 import { useAppStore } from "./store/app";
 import { useSessionStore } from "./store/session";
+import { useUpdaterStore } from "./store/updater";
 
 function App() {
   const view          = useAppStore((s) => s.view);
@@ -23,6 +25,12 @@ function App() {
     const lastCwd = useSessionStore.getState().lastCwd;
     if (lastCwd) openTerminal(lastCwd);
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Check for updates on launch — silent so an unreachable endpoint is a
+  //    no-op. A found update surfaces via the dismissible UpdateBanner. ──────
+  useEffect(() => {
+    useUpdaterStore.getState().check({ silent: true });
   }, []);
 
   // ── Global shortcuts — Cmd/Ctrl+K (commands), Cmd/Ctrl+P (file search) ────
@@ -56,6 +64,7 @@ function App() {
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <FileSearch open={fileSearchOpen} onClose={() => setFileSearchOpen(false)} cwd={workspaceCwd} />
+      <UpdateBanner />
     </ThemeProvider>
   );
 }
