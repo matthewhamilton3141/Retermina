@@ -44,10 +44,20 @@ export function TitleBar() {
     appWindow.startDragging();
   }
 
+  // Double-clicking the title bar toggles maximize/restore — the standard
+  // desktop convention. Guarded against the traffic-light buttons so a quick
+  // double-click on one never also resizes the window.
+  function handleDoubleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("button")) return;
+    appWindow.toggleMaximize();
+  }
+
   return (
     <div
       className="rt-titlebar flex items-center h-8 shrink-0 select-none"
       onMouseDown={handleMouseDown}
+      onDoubleClick={handleDoubleClick}
     >
       {/* Traffic lights — left-aligned, macOS convention */}
       <div className="group flex items-center gap-1.5 px-3">
