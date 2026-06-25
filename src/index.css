@@ -99,10 +99,14 @@
     );
   --rt-surface: rgba(255, 255, 255, 0.75);
   --rt-surface-strong: rgba(255, 255, 255, 0.9);
-  --rt-surface-hover: rgba(139, 92, 246, 0.1);
+  /* Hover wash, borders, glow and terminal tint all derive from the live
+   * `--rt-accent` (mixed toward white/transparent) so a custom accent re-tints
+   * the entire Soft Pastel workspace, not just the backdrop. Falls back to the
+   * engine's brand violet when no accent override is set. */
+  --rt-surface-hover: color-mix(in srgb, var(--rt-accent) 10%, transparent);
   --rt-subsurface: rgba(255, 255, 255, 0.5);
 
-  --rt-border: #e7e1f5;
+  --rt-border: color-mix(in srgb, var(--rt-accent) 14%, #ffffff);
   --rt-border-width: 1px;
 
   --rt-text: #4c4361;
@@ -110,24 +114,25 @@
   --rt-text-faint: #aaa1c0;
 
   --rt-accent: #8b5cf6;
-  --rt-accent-soft: rgba(139, 92, 246, 0.12);
+  --rt-accent-soft: color-mix(in srgb, var(--rt-accent) 12%, transparent);
 
   --rt-radius-sm: 0.75rem;
   --rt-radius: 1rem;
   --rt-radius-lg: 1.5rem;
 
-  --rt-shadow-panel: 0 12px 32px -8px rgba(139, 92, 246, 0.25);
+  --rt-shadow-panel: 0 12px 32px -8px
+    color-mix(in srgb, var(--rt-accent) 25%, transparent);
   --rt-btn-shadow: none;
   --rt-backdrop: blur(4px);
-  --rt-ring: rgba(139, 92, 246, 0.5);
+  --rt-ring: color-mix(in srgb, var(--rt-accent) 50%, transparent);
 
   --rt-icon-stroke: 1.75;
   --rt-font-sans: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN",
     system-ui, sans-serif;
 
-  --rt-terminal-bg: #faf7ff;
-  --rt-grid-placeholder: #8b5cf6;
-  --rt-resize-handle: rgba(139, 92, 246, 0.5);
+  --rt-terminal-bg: color-mix(in srgb, var(--rt-accent) 5%, #ffffff);
+  --rt-grid-placeholder: var(--rt-accent);
+  --rt-resize-handle: color-mix(in srgb, var(--rt-accent) 50%, transparent);
 }
 
 /* Transparent Glass — Apple-style translucency.

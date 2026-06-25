@@ -12,6 +12,7 @@
 
 use serde::Serialize;
 use serde_json::Value;
+use std::io::Write;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,4 +122,66 @@ fn read_usage(cwd: &str) -> ClaudeTokenUsage {
 #[tauri::command]
 pub fn get_claude_token_usage(cwd: String) -> ClaudeTokenUsage {
     read_usage(&cwd)
+}
+
+/// Claude Code's six built-in UI theme identifiers. We only ever set the two
+/// `*-ansi` variants (so Claude inherits the terminal's 16-colour palette and
+/// blends with the active Retermina engine), but the full list guards the
+/// command against writing an unknown value.
+const CLAUDE_THEMES: [&str; 6] = [
+    "light",
+    "dark",
+    "light-daltonized",
+    "dark-daltonized",
+    "light-ansi",
+    "dark-ansi",
+];
+
+/// Tauri command: sync Claude Code's UI theme so the embedded Claude Code panel
+/// matches Retermina's active engine. Reads `~/.claude.json`, updates only the
+/// `theme` key, and writes it back atomically.
+///
+/// Claude Code reads this at launch, so the change applies to the next `claude`
+/// session rather than a running one. We deliberately:
+///   * never CREATE the file (only Claude should bootstrap its own config),
+///   * bail out silently if it can't be read/parsed (don't risk clobbering it),
+///   * skip the write when the theme is already current (avoid churn), and
+///   * write via a temp file + rename so a crash mid-write can't truncate it.
+#[tauri::command]
+pub fn set_claude_theme(theme: String) -> Result<(), String> {
+    if !CLAUDE_THEMES.contains(&theme.as_str()) {
+        return Err(format!("unknown claude theme: {theme}"));
+    }
+
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let path = home.join(".claude.json");
+
+    // Claude Code owns this file; only touch it if it already exists.
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return Ok(());
+    };
+    let Ok(mut config) = serde_json::from_str::<Value>(&content) else {
+        return Ok(()); // unparseable — leave it untouched
+    };
+    let Some(obj) = config.as_object_mut() else {
+        return Ok(());
+    };
+
+    if obj.get("theme").and_then(|v| v.as_str()) == Some(theme.as_str()) {
+        return Ok(()); // already in sync
+    }
+    obj.insert("theme".into(), Value::String(theme));
+
+    let serialized = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+
+    let tmp = path.with_extension("json.retermina.tmp");
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        f.write_all(serialized.as_bytes()).map_err(|e| e.to_string())?;
+        f.flush().map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
 }

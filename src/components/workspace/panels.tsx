@@ -3,7 +3,9 @@ import { memo, useEffect, useState, type ReactNode } from "react";
 import Icon from "../Icon";
 import { highlightCode } from "../../lib/highlight";
 import { useEditorStore } from "../../store/editor";
-import { getClaudeTokenUsage, type ClaudeTokenUsage } from "../../lib/fs";
+import { getClaudeTokenUsage, setClaudeTheme, type ClaudeTokenUsage } from "../../lib/fs";
+import { claudeThemeForEngine } from "../../lib/theme";
+import { useTheme } from "../../theme/ThemeProvider";
 import type { PanelKind } from "../../lib/workspaceLayout";
 import DiffViewer from "./DiffViewer";
 import FileExplorerPanel from "./FileExplorerPanel";
@@ -183,6 +185,35 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
   const [usage, setUsage] = useState<ClaudeTokenUsage | null>(null);
   const [expanded, setExpanded] = useState(false);
 
+  // Theme-restart prompt. Claude Code reads its UI theme at launch, so a running
+  // session keeps the engine it spawned under. When the engine changes such that
+  // the matching Claude theme differs (light ↔ dark — same-brightness switches
+  // map to the same `*-ansi` variant and need no restart), we surface a prompt
+  // and let the user decide *when* to respawn rather than dropping their session.
+  const { theme } = useTheme();
+  const targetClaudeTheme = claudeThemeForEngine(theme);
+  // Remount key for the terminal viewport: bumping it tears down the PTY and
+  // relaunches `claude`, which then re-reads the freshly synced config.
+  const [restartNonce, setRestartNonce] = useState(0);
+  // The Claude theme the live session launched under (initialised to the theme
+  // at first mount, since that's what the spawning `claude` will pick up).
+  const [launchedClaudeTheme, setLaunchedClaudeTheme] = useState(targetClaudeTheme);
+  // Target the user has explicitly deferred, so "Later" stops the nag until the
+  // engine moves to a different brightness again.
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+
+  const themeMismatch = launchedClaudeTheme !== targetClaudeTheme;
+  const showRestartPrompt = themeMismatch && dismissedFor !== targetClaudeTheme;
+
+  const handleRestart = async () => {
+    // Make sure the config reflects the current engine before we relaunch, so
+    // there's no race with the ThemeProvider's own async sync.
+    await setClaudeTheme(targetClaudeTheme).catch(() => {});
+    setLaunchedClaudeTheme(targetClaudeTheme);
+    setDismissedFor(null);
+    setRestartNonce((n) => n + 1);
+  };
+
   useEffect(() => {
     if (!cwd) return;
 
@@ -200,6 +231,31 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
 
   return (
     <div className="rt-terminal-surface flex h-full w-full flex-col">
+      {/* Theme-restart prompt */}
+      {showRestartPrompt && (
+        <div className="rt-divider-b flex shrink-0 items-center gap-2 px-2.5 py-1.5">
+          <Icon name="claudeLogo" size={12} className="rt-accent-text shrink-0" />
+          <span className="rt-text-muted flex-1 text-[10px]">
+            Theme changed — restart Claude Code to match{" "}
+            <span className="rt-text">{theme.label}</span>?
+          </span>
+          <button
+            type="button"
+            onClick={handleRestart}
+            className="rt-accent-text shrink-0 text-[10px] font-medium hover:underline"
+          >
+            Restart now
+          </button>
+          <button
+            type="button"
+            onClick={() => setDismissedFor(targetClaudeTheme)}
+            className="rt-text-faint shrink-0 text-[10px] hover:underline"
+          >
+            Later
+          </button>
+        </div>
+      )}
+
       {/* Stats strip */}
       {cwd && (
         <div className="rt-divider-b shrink-0">
@@ -251,9 +307,11 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
         </div>
       )}
 
-      {/* Terminal */}
+      {/* Terminal — `restartNonce` in the key forces a full remount (PTY
+          teardown + a fresh `claude` launch) when the user opts to restart. */}
       <div className="min-h-0 flex-1 p-2">
         <TerminalViewport
+          key={restartNonce}
           cwd={cwd}
           className="h-full w-full"
           initialCommand="claude"

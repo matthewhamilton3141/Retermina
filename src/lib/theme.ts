@@ -230,3 +230,19 @@ export function terminalColorFgbg(background: string | undefined): string {
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
   return luminance > 0.5 ? "0;15" : "15;0";
 }
+
+/** Whether an engine reads as light (light surface, dark text). */
+export function isLightTheme(theme: ThemeMeta): boolean {
+  return terminalColorFgbg(theme.terminal.background) === "0;15";
+}
+
+/**
+ * Claude Code UI theme that best matches an engine. We use the `*-ansi` variants
+ * so Claude paints with the terminal's own 16-colour palette (this engine's
+ * `terminal` table) instead of its stock colours — making the embedded Claude
+ * Code panel inherit the active engine's personality. Light/dark tracks the
+ * engine's surface so text stays legible.
+ */
+export function claudeThemeForEngine(theme: ThemeMeta): "light-ansi" | "dark-ansi" {
+  return isLightTheme(theme) ? "light-ansi" : "dark-ansi";
+}

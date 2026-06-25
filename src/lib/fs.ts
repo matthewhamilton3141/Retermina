@@ -103,3 +103,13 @@ export interface ClaudeTokenUsage {
 export async function getClaudeTokenUsage(cwd: string): Promise<ClaudeTokenUsage> {
   return invoke<ClaudeTokenUsage>("get_claude_token_usage", { cwd });
 }
+
+/**
+ * Sync Claude Code's persisted UI theme (in `~/.claude.json`) so the embedded
+ * Claude Code panel matches Retermina's active engine. Takes effect on the next
+ * `claude` launch. Best-effort: rejects only on a bad theme id, otherwise no-ops
+ * when the config is missing/unreadable.
+ */
+export async function setClaudeTheme(theme: string): Promise<void> {
+  return invoke<void>("set_claude_theme", { theme });
+}

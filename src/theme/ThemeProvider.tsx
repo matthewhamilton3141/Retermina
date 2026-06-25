@@ -26,12 +26,14 @@ import { useAppStore } from "../store/app";
 import {
   DEFAULT_THEME_ID,
   THEMES,
+  claudeThemeForEngine,
   resolveTheme,
   type ThemeId,
   type ThemeMeta,
 } from "../lib/theme";
 import { FONT_BY_ID, customFontStack } from "../lib/fonts";
 import { registerAllCustomFonts } from "../lib/fontRegistry";
+import { setClaudeTheme } from "../lib/fs";
 
 export interface ThemeContextValue {
   /** The active engine id. */
@@ -111,6 +113,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (customFonts.length) void registerAllCustomFonts(customFonts);
   }, [customFonts]);
+
+  // Keep Claude Code's persisted UI theme in step with the active engine so the
+  // embedded Claude Code panel doesn't render a dark UI on a light workspace (or
+  // vice versa). Best-effort and fire-and-forget — the change is picked up by
+  // the next `claude` launch, not a running session. Errors (e.g. running
+  // outside Tauri, or no Claude config yet) are swallowed.
+  useEffect(() => {
+    void setClaudeTheme(claudeThemeForEngine(theme)).catch(() => {});
+  }, [theme]);
 
   // Apply the data-theme attribute and optional accent override before paint.
   useLayoutEffect(() => {

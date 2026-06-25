@@ -45,6 +45,7 @@ pub fn run() {
             fs::list_files,
             terminal_import::get_terminal_cwd,
             claude_stats::get_claude_token_usage,
+            claude_stats::set_claude_theme,
             fonts::save_font,
             fonts::read_font,
             fonts::list_fonts,
