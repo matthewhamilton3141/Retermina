@@ -1,5 +1,17 @@
 # Retermina
 
+## Installation (macOS)
+
+After mounting the `.dmg` and dragging Retermina to Applications, macOS may show **"Retermina is damaged and can't be opened"**. This is a Gatekeeper quarantine flag — not actual corruption. Fix it by running:
+
+```sh
+xattr -cr /Applications/Retermina.app
+```
+
+Then open the app normally.
+
+---
+
 A high-utility terminal workspace built on Tauri v2 and React. Retermina replaces the traditional terminal window with a modular, themeable developer environment that runs your native shell securely inside a Rust PTY — with no cloud dependency, no token limits, and no subscription.
 
 ---
@@ -14,7 +26,7 @@ Retermina is a native desktop application built with [Tauri v2](https://v2.tauri
 - **Editor history** (`vscode.rs`) — `get_recent_workspaces` reads the local VSCode/Cursor/VSCodium `state.vscdb` (read-only) to surface recently opened folders on the Launch Hub alongside Retermina's own history.
 - **File system** — `list_dir`, `read_file`, `write_file`, `create_file`, `create_dir`, `rename_path`, `delete_path` commands with a 5 MB read cap and UTF-8 validation, plus `suggest_directories` / `validate_directory` backing the Launch Hub's autocompleting "Open Folder" field and `list_files` (a capped recursive walk) powering the Cmd/Ctrl+P quick-open index.
 - **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
-- **Claude usage** (`claude_stats.rs`) — parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost.
+- **Claude integration** (`claude_stats.rs`) — `get_claude_token_usage` parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost. `set_claude_theme` keeps Claude Code's own UI theme in step with the active engine by surgically updating the `theme` key in `~/.claude.json` (read-modify-write of that one key, atomic temp-file rename, and it never creates the file).
 - **Loom presets** (`presets.rs`) — `read_presets` / `write_presets` persist the preset library to `<data_dir>/Retermina/presets.json`, serving as the Tauri-file storage backend for the Loom store.
 - **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata to the Iris command bar.
 - **Port discovery** — `lsof` / `netstat` parsing to surface active local servers in the Localhost Tracker panel.
@@ -47,7 +59,7 @@ Seven panel types can be independently toggled, dragged, resized, and arranged a
 | **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY |
 | **Code** | Read-only (or Safe Edit) file viewer with syntax highlighting, live diff, and inline hex colour swatches |
 | **Localhost** | Active port tracker with one-click process termination |
-| **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip |
+| **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip. Its UI theme tracks the active engine (see [Semantic theming](#semantic-theming-engine)), and a dismissible prompt offers to restart the session when a light↔dark switch needs it |
 | **Preview** | Live preview launcher — opens a standalone native window pointed at a dev-server URL |
 | **Changes** | Live project-wide git diff (working tree vs `HEAD`) that updates as files change — including edits made by the Claude CLI in the Terminal |
 
@@ -92,10 +104,14 @@ Iris is a **local, tokenless** command bar at the bottom of the workspace. It re
 | `commit`, `commit all`, `ci` | `git add -A && git commit` | repo, uncommitted changes |
 | `commit staged`, `ci` | `git commit` | repo, staged changes exist |
 | `stage`, `add`, `git add` | `git add -A` | repo, unstaged or untracked files |
+| `checkout`, `switch`, `change branch` | `git checkout <branch>` *(prompts for name)* | in any repo |
+| `new branch`, `create branch`, `feature branch` | `git checkout -b <branch>` *(prompts for name)* | in any repo |
+| `merge`, `combine branch` | `git merge <branch>` *(prompts for name)* | in any repo |
+| `tag`, `create tag`, `release` | `git tag <name>` *(prompts for name)* | in any repo |
 | `status`, `st`, `what changed` | `git status` | in any repo |
 | `diff`, `changes`, `delta` | `git diff` | repo, unstaged changes |
 | `diff staged`, `cached` | `git diff --staged` | repo, staged changes exist |
-| `log`, `history`, `graph` | `git log --oneline --graph -20` | in any repo |
+| `log`, `history`, `graph` | `git log --oneline --graph --decorate -20` | in any repo |
 | `stash`, `shelve` | `git stash push -u` | repo, uncommitted changes |
 | `stash pop`, `unstash`, `pop` | `git stash pop` | in any repo |
 | `stash list`, `stashes` | `git stash list` | in any repo |
@@ -117,6 +133,7 @@ Iris is a **local, tokenless** command bar at the bottom of the workspace. It re
 | `build`, `bundle`, `compile` | `npm run build` |
 | `test`, `jest`, `vitest`, `spec` | `npm test` |
 | `lint`, `eslint`, `check` | `npm run lint` |
+| `run`, `npm run`, `script` | `npm run <script>` *(prompts for script name)* |
 
 #### Shell commands
 
@@ -128,6 +145,7 @@ Iris is a **local, tokenless** command bar at the bottom of the workspace. It re
 | `du`, `disk`, `size`, `folder size` | `du -sh ./* \| sort -h` |
 | `find`, `typescript`, `javascript`, `source` | `find` for all TS/JS/TSX/JSX, excluding `node_modules` and `dist` |
 | `ps`, `processes`, `node`, `running` | `ps aux` filtered for node/npm/vite/pnpm |
+| `mkdir`, `make dir`, `new folder` | `mkdir -p <name>` *(prompts for directory name)* |
 
 #### File commands *(require a file open in the Code panel)*
 
@@ -151,11 +169,13 @@ Five structural theme engines swap the entire visual character of the applicatio
 
 Each engine defines ~50 CSS custom properties (`--rt-bg`, `--rt-surface`, `--rt-accent`, `--rt-backdrop`, `--rt-shadow-panel`, etc.). Components use semantic utility classes (`.rt-panel`, `.rt-btn`, `.rt-menu`) that read the tokens — no per-component theme logic.
 
-The xterm.js terminal color table is also engine-specific. Only the **cursor** and **selection** track the active accent — the selection is painted as a solid accent fill so a highlight inside the Terminal reads identically to the web `::selection` highlight in the Code panel. The ANSI palette slots (`red`, `blue`, `green`, …) are left untouched so terminal apps like the Claude CLI render their own UI colours correctly. For tools that instead auto-detect light/dark from the environment, each shell is spawned with a theme-derived `COLORFGBG`, so they choose a foreground that stays readable on light engines rather than emitting near-invisible white text. (This is read once at shell start, so it applies to sessions spawned after a theme switch.)
+The xterm.js terminal color table is also engine-specific. Only the **cursor** and **selection** track the active accent — the selection is painted as a solid accent fill so a highlight inside the Terminal reads identically to the web `::selection` highlight in the Code panel. The ANSI palette slots (`red`, `blue`, `green`, …) are left as each engine's own values, which doubles as a palette terminal apps can inherit. For tools that auto-detect light/dark from the environment, each shell is spawned with a theme-derived `COLORFGBG`, so they choose a foreground that stays readable on light engines rather than emitting near-invisible white text. (This is read once at shell start, so it applies to sessions spawned after a theme switch.)
 
 Selection (and other content drawn _on_ the accent — checkmarks, radio dots, the toggle knob) uses a **contrast-aware foreground**: ThemeProvider computes a `--rt-accent-contrast` token from the accent's WCAG luminance and picks near-black or white, whichever reads better. So a light custom accent (e.g. white) no longer turns highlights into blank, unreadable blocks.
 
-**Soft Pastel** additionally derives its background — both the base tint and the ambient radial glows — from the live accent via `color-mix`, so choosing a new accent re-tints the whole backdrop instead of leaving a static wash.
+**Claude Code theme sync.** The Claude Code panel embeds the real `claude` CLI, which reads its own UI theme from `~/.claude.json` — so Retermina keeps that theme aligned with the active engine: a light engine maps Claude to `light-ansi`, a dark engine to `dark-ansi`. The `*-ansi` variants make Claude paint with the engine's own 16-colour ANSI palette rather than its stock colours, so it blends into each theme. Claude reads the theme at launch, so a running session keeps the look it started with; when a light↔dark switch leaves it out of step, the panel shows a small, dismissible prompt offering to restart the session — you decide when, so a cosmetic change never drops a conversation. (Same-brightness switches — e.g. Soft Pastel → Minimalist, both light — map to the same variant and never prompt.)
+
+**Soft Pastel** additionally derives much of its surface palette from the live accent via `color-mix` — the base tint, ambient radial glows, hover wash, borders, panel glow, focus ring, and terminal tint all track the chosen accent — so picking a new accent re-tints the whole workspace, not just the backdrop.
 
 ### Customization & the Settings overlay
 
@@ -204,6 +224,17 @@ Where the Code panel's diff tracks a single open file against a manual snapshot,
 
 The **Preview** panel launches a standalone native window (not a sandboxed iframe), so dev-server HMR WebSockets connect directly. Detected localhost ports are offered as one-click targets. Closing the window (its native button, the panel's Close, or the title-bar indicator) tears the preview down deterministically and — unless you turn off **"Stop the dev server when closing"** — kills the dev server bound to that port. A guard refuses to kill Retermina's *own* dev server if you happen to preview it.
 
+### Launch Hub actions
+
+The Launch Hub offers four workspace-entry actions alongside recent and editor workspaces:
+
+| Action | Behaviour |
+|---|---|
+| **Open Folder** | Autocompleting path field — opens a directory as a workspace |
+| **New File** | Create a new file at an absolute path and open it in the Code panel |
+| **Clone Repo** | Runs `git clone <url>` in a background terminal, then opens the result |
+| **Import from Terminal** | Detects the current working directory of your active external terminal (Terminal.app, iTerm2, Warp, Ghostty, or any shell) via `lsof` + AppleScript — no commands run inside your shell. On focus, Retermina silently polls for an open terminal session and surfaces a one-click banner to open that path as a workspace. |
+
 ### OS drag-and-drop
 
 - **LaunchHub** — drag a folder from Finder to open it as a workspace; drag a text file to open it in the Code panel.
@@ -218,6 +249,20 @@ Every folder opened in Retermina is recorded in a native localStorage history (m
 `decorations: false` + `transparent: true` + `macOSPrivateApi: true` gives Retermina full control of the window chrome. A custom title bar renders macOS traffic light buttons and handles window dragging via an explicit `onMouseDown → appWindow.startDragging()` call — not `data-tauri-drag-region`, which would intercept mid-panel-drag mousemove events and break the grid.
 
 **Double-click to maximize** is animated rather than an instant snap: instead of the OS's immediate toggle, the title bar tweens the window's outer bounds (with `requestAnimationFrame` + an `easeOutCubic` curve) between the restored rect and the monitor's `workArea` — so maximize/restore eases smoothly and still respects the dock/menu bar. It honours `prefers-reduced-motion` (instant jump) and falls back to the native toggle if the monitor can't be resolved.
+
+---
+
+## Download
+
+**macOS (Apple Silicon):** [Download Retermina](https://github.com/matthewhamilton3141/Retermina/releases/latest/download/Retermina-macos.dmg)
+
+After downloading, drag Retermina to your Applications folder, then run this once in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/retermina.app
+```
+
+macOS flags unsigned apps as damaged — this removes that quarantine attribute. The app itself is unmodified.
 
 ---
 
@@ -238,7 +283,7 @@ npm run tauri build  # production bundle
 
 The production build splits heavy vendor libraries (xterm.js, react-grid-layout, Prism) into their own Rollup chunks via `manualChunks` in `vite.config.ts`, so the Launch Hub no longer ships the terminal/grid/highlighter code up front.
 
-> **Self-updates:** the `updater` config in `src-tauri/tauri.conf.json` ships with a placeholder endpoint and public key. "Check for Updates" will report that it can't reach the update server until you point `plugins.updater.endpoints` at a real release feed and replace `pubkey` with the public half of your own signing key (`npm run tauri signer generate`). Builds must be signed with the matching private key for updates to verify.
+> **Self-updates:** the built binary ships without Apple code signing, so the Tauri auto-updater is non-functional — Tauri requires signed builds to verify update integrity. The update check on launch is silent (`silent: true`) and fails gracefully. To get updates, re-download from the [releases page](https://github.com/matthewhamilton3141/Retermina/releases). Auto-update can be enabled later by obtaining an Apple Developer certificate, signing the build, and pointing `plugins.updater.endpoints` at a real release feed with `npm run tauri signer generate`.
 
 ---
 
