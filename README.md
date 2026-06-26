@@ -22,7 +22,7 @@ A high-utility terminal workspace built on Tauri v2 and React. Retermina replace
 
 Retermina is a native desktop application built with [Tauri v2](https://v2.tauri.app). The Rust backend owns all privileged operations:
 
-- **PTY management** — spawns and drives native shell sessions (Zsh, Bash, PowerShell) via `portable-pty`. Output is base64-encoded and streamed to the frontend over a Tauri `Channel` for zero-copy delivery to xterm.js. Each session is launched with `TERM=xterm-256color`, `COLORTERM=truecolor`, and a theme-derived `COLORFGBG` (light vs. dark) so CLI tools like the Claude CLI pick a foreground that stays legible on light themes instead of assuming a dark background.
+- **PTY management** — spawns and drives native shell sessions (Zsh, Bash) via `portable-pty`. Output is base64-encoded and streamed to the frontend over a Tauri `Channel` for zero-copy delivery to xterm.js. Each session is launched with `TERM=xterm-256color`, `COLORTERM=truecolor`, and a theme-derived `COLORFGBG` (light vs. dark) so CLI tools like the Claude CLI pick a foreground that stays legible on light themes instead of assuming a dark background.
 - **Editor history** (`vscode.rs`) — `get_recent_workspaces` reads the local VSCode/Cursor/VSCodium `state.vscdb` (read-only) to surface recently opened folders on the Launch Hub alongside Retermina's own history.
 - **File system** — `list_dir`, `read_file`, `write_file`, `create_file`, `create_dir`, `rename_path`, `delete_path` commands with a 5 MB read cap and UTF-8 validation, plus `suggest_directories` / `validate_directory` backing the Launch Hub's autocompleting "Open Folder" field and `list_files` (a capped recursive walk) powering the Cmd/Ctrl+P quick-open index.
 - **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
@@ -56,7 +56,7 @@ Seven panel types can be independently toggled, dragged, resized, and arranged a
 | Panel | Purpose |
 |---|---|
 | **Explorer** | Directory tree with expand/collapse navigation, inline create/rename/delete, and a right-click context menu |
-| **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY |
+| **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY. Supports scrollback search (**Cmd/Ctrl+F**) and clickable links (open in the default browser) |
 | **Code** | Read-only (or Safe Edit) file viewer with syntax highlighting, live diff, and inline hex colour swatches |
 | **Localhost** | Active port tracker with one-click process termination |
 | **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip. Its UI theme tracks the active engine (see [Semantic theming](#semantic-theming-engine)), and a dismissible prompt offers to restart the session when a light↔dark switch needs it |
@@ -64,6 +64,10 @@ Seven panel types can be independently toggled, dragged, resized, and arranged a
 | **Changes** | Live project-wide git diff (working tree vs `HEAD`) that updates as files change — including edits made by the Claude CLI in the Terminal |
 
 Panels snap to the grid, resize from all eight edges, and resolve collisions without flying off-screen.
+
+#### Terminal search & clickable links
+
+Each terminal loads xterm's **search** and **web-links** addons. **Cmd/Ctrl+F** opens an in-panel find bar with next/previous navigation (Enter / Shift+Enter), a live match counter, and incremental highlighting as you type; **Esc** dismisses it. URLs in terminal output are clickable and open in the OS default browser through the Tauri opener plugin (not xterm's default `window.open`, which the webview blocks). Both apply to every terminal — split panes and the Claude Code panel included.
 
 #### Syntax highlighting
 
@@ -76,6 +80,10 @@ The Code viewer scans file contents for CSS hex colour literals (`#rgb`, `#rgba`
 #### Quick-open (Cmd / Ctrl + P)
 
 A fuzzy file finder indexes the active workspace via the Rust `list_files` command (a capped, depth-first walk that skips `node_modules`, `.git`, build output, and hidden entries). Matches are scored with a basename-weighted fuzzy ranker; pressing Enter opens the file in the Code panel, revealing the panel if it was hidden. It mirrors the **Cmd / Ctrl + K** Command Palette's overlay and keyboard navigation.
+
+#### Content search (Cmd / Ctrl + Shift + F)
+
+Where quick-open matches file *names*, content search matches file *contents*. The Rust `search_in_files` command runs a plain-substring search over the same depth-first walk (reusing the quick-open ignore rules), skipping binary files and anything over 2 MB and stopping once a result cap is hit so large trees never hang — no external `ripgrep`/`grep` dependency. The overlay debounces as you type, groups matches by file with per-line numbers and an inline highlight of the hit, and is fully keyboard-navigable; choosing a match opens the file in the Code panel **scrolled to that line** (the read-only view's non-wrapping `<pre>` makes a line-height offset land exactly), revealing the panel if it was hidden.
 
 #### Floating menus
 
@@ -244,6 +252,10 @@ The Launch Hub offers four workspace-entry actions alongside recent and editor w
 
 Every folder opened in Retermina is recorded in a native localStorage history (max 20 entries, timestamped). The LaunchHub displays them sorted by recency with relative timestamps and per-entry removal. It also surfaces recent folders from your local editor history (VSCode / Cursor / VSCodium, via the Rust `get_recent_workspaces` command), merged in and de-duplicated against Retermina's own list — local entries win, and editor-sourced folders are tagged **Editor**. Opening one records it into the local history, so it stops showing as a duplicate next time.
 
+### Session restore
+
+On launch Retermina reconnects to where you left off: the last workspace folder, the panel layout, and the file that was open in the Code panel (reopened by path). The panel layout (geometry + which panels are visible, with per-panel zoom) is persisted by the workspace-layout store; the cwd and the open file are persisted by a small session store. Restore is local-only and privacy-preserving in the same spirit as a Loom — it records **paths and layout, never contents**: no file bodies, no PTY/terminal scrollback, no shell history. Navigating back to the Launch Hub clears the session, so a deliberate exit lands you on the hub next launch rather than re-entering the workspace; and a remembered file from one workspace never leaks into another (the open-file pointer resets when the cwd changes).
+
 ### Custom title bar
 
 `decorations: false` + `transparent: true` + `macOSPrivateApi: true` gives Retermina full control of the window chrome. A custom title bar renders macOS traffic light buttons and handles window dragging via an explicit `onMouseDown → appWindow.startDragging()` call — not `data-tauri-drag-region`, which would intercept mid-panel-drag mousemove events and break the grid.
@@ -268,10 +280,9 @@ macOS flags unsigned apps as damaged — this removes that quarantine attribute.
 
 ## Getting Started
 
-**Prerequisites:** Rust toolchain, Node.js ≥ 20, platform build tools.
+**Prerequisites:** Rust toolchain, Node.js ≥ 20, and the macOS build tools.
 
 - macOS: `xcode-select --install`
-- Windows: WebView2 + C++ Build Tools via Visual Studio Installer
 
 ```bash
 git clone https://github.com/matthewhamilton3141/retermina.git
@@ -279,7 +290,10 @@ cd retermina
 npm install
 npm run tauri dev    # development
 npm run tauri build  # production bundle
+npm test             # run the unit suite (Vitest)
 ```
+
+The pure logic modules under `src/lib` (the LCS diff, the Iris suggestion ranker, the Loom schema validator, the theme/contrast helpers, and the grid layout reconciler) are covered by a [Vitest](https://vitest.dev) suite — `npm test` runs it once, `npm run test:watch` re-runs on change.
 
 The production build splits heavy vendor libraries (xterm.js, react-grid-layout, Prism) into their own Rollup chunks via `manualChunks` in `vite.config.ts`, so the Launch Hub no longer ships the terminal/grid/highlighter code up front.
 

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 
 import {
@@ -115,6 +118,14 @@ export function TerminalViewport({
   const terminalThemeRef = useRef(terminalTheme);
   terminalThemeRef.current = terminalTheme;
 
+  // Scrollback search — the addon is created inside the PTY effect; these
+  // refs/state let the search UI (rendered outside that effect) drive it.
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState({ index: -1, count: 0 });
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -133,6 +144,33 @@ export function TerminalViewport({
     termRef.current = term;
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
+
+    // Scrollback search + clickable links. Links open in the OS default
+    // browser via the Tauri opener plugin rather than xterm's default
+    // window.open (which a Tauri webview blocks).
+    const searchAddon = new SearchAddon();
+    term.loadAddon(searchAddon);
+    searchAddonRef.current = searchAddon;
+    const resultsSub = searchAddon.onDidChangeResults((r) => {
+      if (!disposed) setSearchResults({ index: r.resultIndex, count: r.resultCount });
+    });
+    term.loadAddon(
+      new WebLinksAddon((_event, uri) => {
+        void openUrl(uri);
+      }),
+    );
+
+    // Cmd/Ctrl+F opens the search bar instead of reaching the shell. Exclude
+    // Shift so Cmd/Ctrl+Shift+F falls through to the global content-search
+    // overlay rather than opening both at once.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
+        setSearchOpen(true);
+        return false;
+      }
+      return true;
+    });
+
     term.open(container);
     safeFit();
 
@@ -230,6 +268,8 @@ export function TerminalViewport({
       ptyWriteRef.current = null;
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
+      resultsSub.dispose();
+      searchAddonRef.current = null;
       dataSub.dispose();
       if (sessionId) {
         terminalBus.clear(sessionId);
@@ -248,10 +288,98 @@ export function TerminalViewport({
     }
   }, [terminalTheme]);
 
+  // Focus the search field whenever the bar opens.
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  // Incremental search as the user types: re-run from the current position so
+  // matches don't jump around. Clearing the query drops the highlight.
+  useEffect(() => {
+    if (!searchOpen) return;
+    if (searchQuery) {
+      searchAddonRef.current?.findNext(searchQuery, { incremental: true });
+    } else {
+      termRef.current?.clearSelection();
+      setSearchResults({ index: -1, count: 0 });
+    }
+  }, [searchQuery, searchOpen]);
+
+  const findNext = useCallback(() => {
+    if (searchQuery) searchAddonRef.current?.findNext(searchQuery);
+  }, [searchQuery]);
+
+  const findPrevious = useCallback(() => {
+    if (searchQuery) searchAddonRef.current?.findPrevious(searchQuery);
+  }, [searchQuery]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    termRef.current?.clearSelection();
+    termRef.current?.focus();
+  }, []);
+
   return (
     <div ref={dropZoneRef} className={`relative ${className ?? ""}`}>
       {/* xterm canvas fills the wrapper */}
       <div ref={containerRef} className="absolute inset-0" />
+
+      {/* Scrollback search bar (Cmd/Ctrl+F) */}
+      {searchOpen && (
+        <div
+          className="rt-panel absolute right-2 top-2 z-20 flex items-center gap-1 rounded px-1.5 py-1 shadow"
+          style={{ background: "var(--rt-surface)" }}
+        >
+          <Icon name="search" size={13} className="opacity-60" />
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (e.shiftKey) findPrevious();
+                else findNext();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                closeSearch();
+              }
+            }}
+            placeholder="Find"
+            spellCheck={false}
+            className="w-32 bg-transparent text-xs outline-none"
+            style={{ color: "var(--rt-text)" }}
+          />
+          <span className="min-w-[3rem] text-center text-[11px] tabular-nums opacity-60">
+            {searchResults.count > 0 ? `${searchResults.index + 1}/${searchResults.count}` : searchQuery ? "0/0" : ""}
+          </span>
+          <button
+            type="button"
+            onClick={findPrevious}
+            title="Previous match (Shift+Enter)"
+            className="rt-btn flex h-5 w-5 items-center justify-center rounded"
+          >
+            <Icon name="chevronDown" size={13} className="rotate-180" />
+          </button>
+          <button
+            type="button"
+            onClick={findNext}
+            title="Next match (Enter)"
+            className="rt-btn flex h-5 w-5 items-center justify-center rounded"
+          >
+            <Icon name="chevronDown" size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={closeSearch}
+            title="Close (Esc)"
+            className="rt-btn flex h-5 w-5 items-center justify-center rounded"
+          >
+            <Icon name="close" size={13} />
+          </button>
+        </div>
+      )}
       {/* Drop overlay — shown for both files and folders */}
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded"

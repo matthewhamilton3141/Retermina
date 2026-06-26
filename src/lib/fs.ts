@@ -76,6 +76,46 @@ export async function listFiles(root: string, max = 4000): Promise<string[]> {
   return invoke<string[]>("list_files", { root, max });
 }
 
+/** A single matching line within a file. Mirrors the Rust `SearchMatch`. */
+export interface SearchMatch {
+  /** 1-based line number. */
+  line: number;
+  /** The matched line's text (short lines whole; long lines windowed around the hit). */
+  text: string;
+}
+
+/** All matches found in one file. Mirrors the Rust `FileMatches`. */
+export interface FileMatches {
+  /** Path relative to the search root. */
+  path: string;
+  matches: SearchMatch[];
+}
+
+/**
+ * Search file *contents* under `root` for a plain-substring `query`. Skips
+ * hidden/build/VCS dirs, binary files, and files over 2 MB; stops once
+ * `maxResults` total matching lines are found. Resolves to `[]` on failure so
+ * the panel degrades to an empty state.
+ */
+export async function searchInFiles(
+  root: string,
+  query: string,
+  caseSensitive = false,
+  maxResults = 500,
+): Promise<FileMatches[]> {
+  try {
+    return await invoke<FileMatches[]>("search_in_files", {
+      root,
+      query,
+      caseSensitive,
+      maxResults,
+    });
+  } catch (error) {
+    console.error("[retermina] search_in_files failed:", error);
+    return [];
+  }
+}
+
 /** Read the raw Retermina Loom presets document (empty string if none yet). */
 export async function readPresets(): Promise<string> {
   return invoke<string>("read_presets");

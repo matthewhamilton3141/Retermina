@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { readFile, writeFile } from "../lib/fs";
+import { useSessionStore } from "./session";
 
 interface EditorState {
   selectedPath: string | null;
@@ -20,7 +21,15 @@ interface EditorState {
   /** Save error message, cleared on next edit or successful save. */
   saveError: string | null;
 
-  openFile: (path: string) => Promise<void>;
+  /**
+   * A 1-based line the Code panel should scroll to once content is loaded
+   * (set by content search). Cleared by the panel after it reveals the line.
+   */
+  revealLine: number | null;
+
+  openFile: (path: string, revealLine?: number) => Promise<void>;
+  /** Clear the pending reveal target once the panel has scrolled to it. */
+  clearReveal: () => void;
   refreshContent: () => Promise<void>;
   enableDiff: () => void;
   disableDiff: () => void;
@@ -48,8 +57,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   editDraft: null,
   saving: false,
   saveError: null,
+  revealLine: null,
 
-  openFile: async (path) => {
+  openFile: async (path, revealLine) => {
     set({
       selectedPath: path,
       loading: true,
@@ -60,7 +70,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isEditing: false,
       editDraft: null,
       saveError: null,
+      revealLine: revealLine ?? null,
     });
+    // Remember the open file for session restore (path only — not contents).
+    useSessionStore.getState().saveOpenFile(path);
     try {
       const content = await readFile(path);
       set({ content, loading: false });
@@ -68,6 +81,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set({ error: String(err), loading: false });
     }
   },
+
+  clearReveal: () => set({ revealLine: null }),
 
   refreshContent: async () => {
     const { selectedPath, isEditing } = get();
@@ -110,7 +125,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  close: () =>
+  close: () => {
+    useSessionStore.getState().saveOpenFile(null);
     set({
       selectedPath: null,
       content: null,
@@ -122,5 +138,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       editDraft: null,
       saving: false,
       saveError: null,
-    }),
+      revealLine: null,
+    });
+  },
 }));

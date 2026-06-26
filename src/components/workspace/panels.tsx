@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 
 import Icon from "../Icon";
 import { highlightCode } from "../../lib/highlight";
@@ -49,9 +49,25 @@ function CodeViewPanel() {
   const cancelEditing = useEditorStore((s) => s.cancelEditing);
   const saveEdits = useEditorStore((s) => s.saveEdits);
   const close = useEditorStore((s) => s.close);
+  const revealLine = useEditorStore((s) => s.revealLine);
+  const clearReveal = useEditorStore((s) => s.clearReveal);
 
   const fileName = selectedPath ? selectedPath.split("/").pop() : null;
   const canEdit = !!selectedPath && !loading && !error;
+
+  // Scroll to a target line once content has rendered (set by content search).
+  // The read-only <pre> uses `whitespace-pre` (no wrapping), so one source line
+  // maps to exactly one rendered line and a line-height offset lands precisely.
+  const preRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    if (revealLine === null || content === null || diffMode || isEditing) return;
+    const pre = preRef.current;
+    if (!pre) return;
+    const lineHeight = parseFloat(getComputedStyle(pre).lineHeight) || 19.5;
+    // Leave a few lines of lead-in context above the match.
+    pre.scrollTop = Math.max(0, (revealLine - 4) * lineHeight);
+    clearReveal();
+  }, [revealLine, content, diffMode, isEditing, clearReveal]);
 
   return (
     <div className="rt-subsurface flex h-full w-full flex-col">
@@ -157,7 +173,7 @@ function CodeViewPanel() {
               <p className="rt-text-muted text-[11px] leading-snug">{error}</p>
             </div>
           ) : (
-            <pre className="rt-code h-full w-full overflow-auto p-3 font-mono text-[12px] leading-relaxed whitespace-pre">
+            <pre ref={preRef} className="rt-code h-full w-full overflow-auto p-3 font-mono text-[12px] leading-relaxed whitespace-pre">
               {highlightCode(content, fileName ?? "")}
             </pre>
           )}

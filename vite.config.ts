@@ -16,7 +16,12 @@ export default defineConfig(async () => ({
     rollupOptions: {
       output: {
         manualChunks: {
-          xterm: ["@xterm/xterm", "@xterm/addon-fit"],
+          xterm: [
+            "@xterm/xterm",
+            "@xterm/addon-fit",
+            "@xterm/addon-search",
+            "@xterm/addon-web-links",
+          ],
           grid: ["react-grid-layout"],
           prism: ["prismjs"],
           vendor: ["zustand", "lucide-react"],

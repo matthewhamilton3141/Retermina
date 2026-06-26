@@ -43,6 +43,7 @@ pub fn run() {
             fs::suggest_directories,
             fs::validate_directory,
             fs::list_files,
+            fs::search_in_files,
             terminal_import::get_terminal_cwd,
             claude_stats::get_claude_token_usage,
             claude_stats::set_claude_theme,

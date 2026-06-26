@@ -6,8 +6,10 @@ import ThemeProvider from "./theme/ThemeProvider";
 import TitleBar from "./components/TitleBar";
 import CommandPalette from "./components/CommandPalette";
 import FileSearch from "./components/FileSearch";
+import ContentSearch from "./components/ContentSearch";
 import UpdateBanner from "./components/UpdateBanner";
 import { useAppStore } from "./store/app";
+import { useEditorStore } from "./store/editor";
 import { useSessionStore } from "./store/session";
 import { useUpdaterStore } from "./store/updater";
 
@@ -19,11 +21,17 @@ function App() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
+  const [contentSearchOpen, setContentSearchOpen] = useState(false);
 
   // ── Session reconnect — run once on mount ────────────────────────────────
+  // Reopen the last workspace and the file that was open in the Code panel.
+  // The panel layout itself is restored by the persisted workspace-layout
+  // store; this only re-supplies the cwd and the open file (path only).
   useEffect(() => {
-    const lastCwd = useSessionStore.getState().lastCwd;
-    if (lastCwd) openTerminal(lastCwd);
+    const { lastCwd, openFilePath } = useSessionStore.getState();
+    if (!lastCwd) return;
+    openTerminal(lastCwd);
+    if (openFilePath) void useEditorStore.getState().openFile(openFilePath);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -33,9 +41,15 @@ function App() {
     useUpdaterStore.getState().check({ silent: true });
   }, []);
 
-  // ── Global shortcuts — Cmd/Ctrl+K (commands), Cmd/Ctrl+P (file search) ────
+  // ── Global shortcuts — Cmd/Ctrl+K (commands), Cmd/Ctrl+P (file search),
+  //    Cmd/Ctrl+Shift+F (content search) ────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setContentSearchOpen((v) => !v);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
@@ -64,6 +78,7 @@ function App() {
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <FileSearch open={fileSearchOpen} onClose={() => setFileSearchOpen(false)} cwd={workspaceCwd} />
+      <ContentSearch open={contentSearchOpen} onClose={() => setContentSearchOpen(false)} cwd={workspaceCwd} />
       <UpdateBanner />
     </ThemeProvider>
   );
