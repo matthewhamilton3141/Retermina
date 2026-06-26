@@ -2,10 +2,12 @@
 
 Releases are built and published automatically by
 [`.github/workflows/release.yml`](.github/workflows/release.yml) whenever you
-push a version tag. The workflow builds signed installers for macOS, Windows,
-and Linux, generates the updater manifest (`latest.json`), and attaches
-everything to a GitHub Release. The in-app auto-updater reads that release via
-the endpoint configured in `src-tauri/tauri.conf.json`:
+push a version tag. Retermina is macOS-only for now, so the workflow builds a
+single signed universal (Apple Silicon + Intel) macOS app, generates the
+updater manifest (`latest.json`), and attaches everything to a GitHub Release.
+(When Windows/Linux support lands, add them back as a build matrix.) The in-app
+auto-updater reads that release via the endpoint configured in
+`src-tauri/tauri.conf.json`:
 
 ```
 https://github.com/matthewhamilton3141/Retermina/releases/latest/download/latest.json
