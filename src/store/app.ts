@@ -5,6 +5,7 @@ import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from "../lib/theme";
 import { THEME_FONT_CATEGORY, fontIdForCategory } from "../lib/fonts";
 import { useRecentStore } from "./recent";
 import { useSessionStore } from "./session";
+import { useWorkspacesStore } from "./workspaces";
 
 export type AppView = "launch" | "workspace";
 export type ToolbarStyle = "dropdown" | "icons";
@@ -85,10 +86,15 @@ export const useAppStore = create<AppState>()(
           useRecentStore.getState().record(cwd);
           useSessionStore.getState().save(cwd);
         }
+        // Open (or focus an existing) workspace tab for this folder. Each tab
+        // keeps its own terminals running even while backgrounded.
+        useWorkspacesStore.getState().openWorkspace(cwd);
         set({ view: "workspace", workspaceCwd: cwd });
       },
       goToLaunch: () => {
         useSessionStore.getState().clear();
+        // Tabs are intentionally left intact so returning to a workspace keeps
+        // the user's open folders; only the view changes.
         set({ view: "launch", workspaceCwd: null });
       },
       setTheme: (id) => {

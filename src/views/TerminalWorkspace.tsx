@@ -9,10 +9,10 @@ import WorkspaceLayout from "../components/workspace/WorkspaceLayout";
 import { prettyPath } from "../lib/format";
 import { PANEL_KINDS, PANEL_META } from "../lib/workspaceLayout";
 import { useWorkspaceStore } from "../store/workspace";
+import { useWorkspacesStore } from "../store/workspaces";
 import { useAppStore } from "../store/app";
 
 export interface TerminalWorkspaceProps {
-  cwd?: string | null;
   onLeave: () => void;
 }
 
@@ -91,10 +91,70 @@ function PanelsDropdown({ showLabel = false }: { showLabel?: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
+// Tab strip — one button per open workspace, plus a new-tab button
+// ---------------------------------------------------------------------------
+
+function WorkspaceTabs() {
+  const tabs           = useWorkspacesStore((s) => s.tabs);
+  const activeId       = useWorkspacesStore((s) => s.activeId);
+  const setActive      = useWorkspacesStore((s) => s.setActive);
+  const closeWorkspace = useWorkspacesStore((s) => s.closeWorkspace);
+  const newWorkspace   = useWorkspacesStore((s) => s.newWorkspace);
+
+  if (tabs.length === 0) return null;
+
+  return (
+    <div className="rt-toolbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[var(--rt-border)] px-2 py-1">
+      {tabs.map((tab) => {
+        const active = tab.id === activeId;
+        return (
+          <div
+            key={tab.id}
+            role="tab"
+            aria-selected={active}
+            onMouseDown={() => setActive(tab.id)}
+            title={tab.cwd ?? "Blank Terminal"}
+            className={`group/tab flex max-w-[200px] shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
+              active ? "rt-btn-active" : "rt-btn-outline"
+            }`}
+          >
+            <Icon name="terminal" size={12} className="shrink-0" />
+            <span className="min-w-0 truncate">{tab.title}</span>
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                closeWorkspace(tab.id);
+              }}
+              title="Close workspace"
+              className="rt-btn ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/tab:opacity-100"
+            >
+              <Icon name="close" size={9} aria-label="Close workspace" />
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => newWorkspace(null)}
+        title="New workspace"
+        className="rt-btn flex h-6 w-6 shrink-0 items-center justify-center"
+      >
+        <Icon name="plus" size={13} aria-label="New workspace" />
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // TerminalWorkspace
 // ---------------------------------------------------------------------------
 
-export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProps) {
+export function TerminalWorkspace({ onLeave }: TerminalWorkspaceProps) {
+  const tabs         = useWorkspacesStore((s) => s.tabs);
+  const activeId     = useWorkspacesStore((s) => s.activeId);
+  const activeTab    = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
+  const cwd          = activeTab?.cwd ?? null;
   const title        = cwd ? prettyPath(cwd) : "Blank Terminal";
   const panels       = useWorkspaceStore((s) => s.panels);
   const togglePanel  = useWorkspaceStore((s) => s.togglePanel);
@@ -105,6 +165,11 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
   const visibleKinds = new Set(panels.map((p) => p.kind));
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Closing the last workspace returns to the Launch Hub.
+  useEffect(() => {
+    if (tabs.length === 0) onLeave();
+  }, [tabs.length, onLeave]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -178,8 +243,30 @@ export function TerminalWorkspace({ cwd = null, onLeave }: TerminalWorkspaceProp
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 p-2">
-        <WorkspaceLayout cwd={cwd} />
+      <WorkspaceTabs />
+
+      {/* Every tab stays mounted so its terminals keep running in the
+          background; inactive tabs are hidden with `visibility` (not display),
+          which preserves their measured size so the grids stay laid out and
+          the PTYs stay correctly sized. */}
+      <div className="relative min-h-0 flex-1">
+        {tabs.map((tab) => {
+          const active = tab.id === activeTab?.id;
+          return (
+            <div
+              key={tab.id}
+              className="absolute inset-0 p-2"
+              style={{
+                visibility: active ? "visible" : "hidden",
+                zIndex: active ? 1 : 0,
+                pointerEvents: active ? "auto" : "none",
+              }}
+              aria-hidden={!active}
+            >
+              <WorkspaceLayout workspaceId={tab.id} cwd={tab.cwd} active={active} />
+            </div>
+          );
+        })}
       </div>
 
       <IrisBar cwd={cwd} />

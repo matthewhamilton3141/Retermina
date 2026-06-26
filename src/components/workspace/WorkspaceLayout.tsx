@@ -22,18 +22,27 @@ import "react-resizable/css/styles.css";
 
 import PanelFrame from "./PanelFrame";
 import { PANEL_RENDERERS } from "./panels";
-import { useWorkspaceStore } from "../../store/workspace";
+import { useWorkspacesStore } from "../../store/workspaces";
 import {
   GRID_COLS,
   GRID_MARGIN,
   GRID_ROWS,
   MIN_ROW_HEIGHT,
   PANEL_META,
+  type WorkspaceGridItem,
+  type WorkspacePanel,
 } from "../../lib/workspaceLayout";
 
 export interface WorkspaceLayoutProps {
+  /** The tab whose layout this grid renders. */
+  workspaceId: string;
   cwd: string | null;
+  /** Whether this tab is the foreground one (drives Iris bus ownership). */
+  active: boolean;
 }
+
+const EMPTY_PANELS: WorkspacePanel[] = [];
+const EMPTY_GRID: WorkspaceGridItem[] = [];
 
 interface ElementSize {
   width: number;
@@ -119,11 +128,14 @@ function useElementSize() {
 // Component
 // ---------------------------------------------------------------------------
 
-export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
-  const panels     = useWorkspaceStore((s) => s.panels);
-  const grid       = useWorkspaceStore((s) => s.grid);
-  const setGrid    = useWorkspaceStore((s) => s.setGrid);
-  const closePanel = useWorkspaceStore((s) => s.closePanel);
+export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutProps) {
+  const panels      = useWorkspacesStore((s) => s.tabs.find((t) => t.id === workspaceId)?.panels ?? EMPTY_PANELS);
+  const grid        = useWorkspacesStore((s) => s.tabs.find((t) => t.id === workspaceId)?.grid ?? EMPTY_GRID);
+  const setGridRaw  = useWorkspacesStore((s) => s.setGrid);
+  const closePanelRaw = useWorkspacesStore((s) => s.closePanel);
+
+  const setGrid    = useCallback((g: WorkspaceGridItem[]) => setGridRaw(workspaceId, g), [setGridRaw, workspaceId]);
+  const closePanel = useCallback((id: string) => closePanelRaw(workspaceId, id), [closePanelRaw, workspaceId]);
 
   const { ref, width, height } = useElementSize();
   const mounted = width > 0 && height > 0;
@@ -231,15 +243,16 @@ export function WorkspaceLayout({ cwd }: WorkspaceLayoutProps) {
             <PanelFrame
               icon={PANEL_META[panel.kind].icon}
               title={panel.title}
+              workspaceId={workspaceId}
               panelId={panel.id}
               onClose={() => closePanel(panel.id)}
             >
-              {renderer({ cwd })}
+              {renderer({ cwd, workspaceId, active })}
             </PanelFrame>
           </div>
         );
       }),
-    [panels, cwd, closePanel],
+    [panels, cwd, closePanel, workspaceId, active],
   );
 
   return (

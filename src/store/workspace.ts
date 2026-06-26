@@ -1,29 +1,33 @@
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
-
-import {
-  DEFAULT_PANEL_SIZE,
-  GRID_COLS,
-  PANEL_IDS,
-  PANEL_META,
-  WORKSPACE_LAYOUT_VERSION,
-  createDefaultWorkspaceLayout,
-  findFreeSlot,
-  fitIntoColumn,
-  isWorkspaceGridArray,
-  isWorkspacePanelArray,
-  sanitizeGridItem,
-  type PanelKind,
-  type WorkspaceGridItem,
-  type WorkspacePanel,
+/**
+ * Active-workspace shim.
+ *
+ * Historically the workspace layout lived in a single Zustand store. With
+ * multiple workspace tabs the source of truth moved to `useWorkspacesStore`
+ * (store/workspaces.ts), where each tab owns its own layout. This module keeps
+ * the original `useWorkspaceStore` API alive but bound to whichever tab is
+ * *active*, so app-level consumers that only ever care about the foreground
+ * workspace — the toolbar, command palette, file/content search, presets, and
+ * the Loom export bridge — continue to work unchanged.
+ *
+ * Components rendered once per tab (WorkspaceLayout, PanelFrame) must NOT use
+ * this shim; they address their own tab by id through useWorkspacesStore.
+ */
+import { useWorkspacesStore } from "./workspaces";
+import type {
+  PanelKind,
+  WorkspaceGridItem,
+  WorkspacePanel,
 } from "../lib/workspaceLayout";
 
-interface WorkspaceLayoutState {
+// Stable empty fallbacks so selectors don't see a fresh reference each render.
+const EMPTY_PANELS: WorkspacePanel[] = [];
+const EMPTY_GRID: WorkspaceGridItem[] = [];
+const EMPTY_FONTS: Record<string, number> = {};
+
+export interface ActiveWorkspace {
   panels: WorkspacePanel[];
   grid: WorkspaceGridItem[];
-  /** Per-panel font size as a percentage (80–150, default 100). */
   panelFontSizes: Record<string, number>;
-
   setGrid: (grid: WorkspaceGridItem[]) => void;
   togglePanel: (kind: PanelKind) => void;
   closePanel: (id: string) => void;
@@ -32,98 +36,58 @@ interface WorkspaceLayoutState {
   setPanelFontSize: (id: string, size: number) => void;
 }
 
-export const useWorkspaceStore = create<WorkspaceLayoutState>()(
-  persist(
-    (set) => {
-      const defaults = createDefaultWorkspaceLayout();
-      return {
-        panels: defaults.panels,
-        grid: defaults.grid,
-        panelFontSizes: {},
-        setGrid: (grid) => set({ grid }),
-        togglePanel: (kind) =>
-          set((state) => {
-            const id = PANEL_IDS[kind];
-            const isVisible = state.panels.some((panel) => panel.id === id);
+// Module-stable action wrappers that always target the *current* active tab.
+// Defined once so selecting one of these never trips Zustand's identity check.
+const actions = {
+  setGrid: (grid: WorkspaceGridItem[]) => {
+    const s = useWorkspacesStore.getState();
+    if (s.activeId) s.setGrid(s.activeId, grid);
+  },
+  togglePanel: (kind: PanelKind) => {
+    const s = useWorkspacesStore.getState();
+    if (s.activeId) s.togglePanel(s.activeId, kind);
+  },
+  closePanel: (id: string) => {
+    const s = useWorkspacesStore.getState();
+    if (s.activeId) s.closePanel(s.activeId, id);
+  },
+  resetLayout: () => {
+    const s = useWorkspacesStore.getState();
+    if (s.activeId) s.resetLayout(s.activeId);
+  },
+  loadLayout: (panels: WorkspacePanel[], grid: WorkspaceGridItem[]) => {
+    const s = useWorkspacesStore.getState();
+    if (s.activeId) s.loadLayout(s.activeId, panels, grid);
+  },
+  setPanelFontSize: (id: string, size: number) => {
+    const s = useWorkspacesStore.getState();
+    if (s.activeId) s.setPanelFontSize(s.activeId, id, size);
+  },
+};
 
-            if (isVisible) {
-              // Hiding: remove the panel and let remaining column siblings
-              // keep their positions (user can reset to rebalance).
-              return {
-                panels: state.panels.filter((panel) => panel.id !== id),
-                grid: state.grid.filter((item) => item.i !== id),
-              };
-            }
+function buildActive(state: ReturnType<typeof useWorkspacesStore.getState>): ActiveWorkspace {
+  const tab = state.tabs.find((t) => t.id === state.activeId);
+  return {
+    panels: tab?.panels ?? EMPTY_PANELS,
+    grid: tab?.grid ?? EMPTY_GRID,
+    panelFontSizes: tab?.panelFontSizes ?? EMPTY_FONTS,
+    ...actions,
+  };
+}
 
-            // Showing: look for genuinely free space first. If findFreeSlot
-            // finds a clean open slot, use it. Only when the grid is fully
-            // occupied (slot is already taken) fall back to fitIntoColumn,
-            // which resizes the panel's natural column to share height.
-            const size = DEFAULT_PANEL_SIZE[kind];
-            const w = Math.min(size.w, GRID_COLS);
-            const h = size.h;
-            const slot = findFreeSlot(state.grid, w, h);
+/** Read a slice of the active workspace, Zustand-style. */
+export function useWorkspaceStore<T>(selector: (s: ActiveWorkspace) => T): T {
+  return useWorkspacesStore((state) => selector(buildActive(state)));
+}
 
-            const slotOccupied = state.grid.some(
-              (item) =>
-                slot.x < item.x + item.w &&
-                slot.x + w > item.x &&
-                slot.y < item.y + item.h &&
-                slot.y + h > item.y,
-            );
+/** Snapshot the active workspace (for non-React callers like the Loom bridge). */
+useWorkspaceStore.getState = (): ActiveWorkspace => buildActive(useWorkspacesStore.getState());
 
-            const newGrid = slotOccupied
-              ? fitIntoColumn(state.grid, id, kind)
-              : [
-                  ...state.grid,
-                  { i: id, x: slot.x, y: slot.y, w, h, minW: size.minW, minH: size.minH },
-                ];
-
-            return {
-              panels: [
-                ...state.panels,
-                { id, kind, title: PANEL_META[kind].label },
-              ],
-              grid: newGrid,
-            };
-          }),
-        closePanel: (id) =>
-          set((state) => ({
-            panels: state.panels.filter((panel) => panel.id !== id),
-            grid: state.grid.filter((item) => item.i !== id),
-          })),
-        resetLayout: () => {
-          const fresh = createDefaultWorkspaceLayout();
-          set({ panels: fresh.panels, grid: fresh.grid });
-        },
-        loadLayout: (panels, grid) =>
-          set({ panels, grid: grid.map(sanitizeGridItem) }),
-        setPanelFontSize: (id, size) =>
-          set((s) => ({ panelFontSizes: { ...s.panelFontSizes, [id]: Math.max(70, Math.min(150, size)) } })),
-      };
-    },
-    {
-      name: "retermina.workspace-layout",
-      version: WORKSPACE_LAYOUT_VERSION,
-      // Persist only the serializable schema fields, dropping RGL bookkeeping.
-      partialize: (state) => ({
-        panels: state.panels,
-        grid: state.grid.map(sanitizeGridItem),
-      }),
-      // Reject corrupt/partial persisted state and fall back to the defaults
-      // that ship in the freshly-initialized store.
-      merge: (persisted, current) => {
-        const data = persisted as Partial<WorkspaceLayoutState> | undefined;
-        if (
-          data &&
-          isWorkspacePanelArray(data.panels) &&
-          data.panels.length > 0 &&
-          isWorkspaceGridArray(data.grid)
-        ) {
-          return { ...current, panels: data.panels, grid: data.grid };
-        }
-        return current;
-      },
-    },
-  ),
-);
+/** Apply panels/grid (and optionally font sizes) to the active workspace. */
+useWorkspaceStore.setState = (partial: Partial<ActiveWorkspace>): void => {
+  const s = useWorkspacesStore.getState();
+  if (!s.activeId) return;
+  if (partial.panels && partial.grid) {
+    s.loadLayout(s.activeId, partial.panels, partial.grid, partial.panelFontSizes);
+  }
+};

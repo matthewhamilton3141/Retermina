@@ -80,12 +80,24 @@ function PaneDivider({
 
 export const SplitTerminalPanel = memo(function SplitTerminalPanel({
   cwd,
+  active = true,
+  onPopOut,
 }: {
   cwd: string | null;
+  /** Whether the owning workspace tab is in the foreground. */
+  active?: boolean;
+  /**
+   * Detach a pane into its own terminal panel on the workspace grid. Called
+   * with no arguments — the caller adds a fresh terminal panel; this component
+   * removes the popped pane so the remaining pane reclaims the freed space.
+   */
+  onPopOut?: () => void;
 }) {
   const [panes, setPanes] = useState<Pane[]>([{ id: uid(), size: 100 }]);
   const [direction, setDirection] = useState<Direction>("h");
   const containerRef = useRef<HTMLDivElement>(null);
+  // Live pointer-drag state for a pane being dragged out of the split.
+  const [popout, setPopout] = useState<{ paneId: string; x: number; y: number; outside: boolean } | null>(null);
 
   const multi = panes.length > 1;
 
@@ -119,6 +131,54 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
       return next;
     });
   }, []);
+
+  // ── Pop a pane out into its own grid panel ─────────────────────────────────
+  // The detached pane starts a fresh terminal in a new panel (its live session
+  // can't be carried across React trees), and closePane hands its space back to
+  // the remaining pane. Guarded to multi-pane only — the caller also requires it.
+
+  const popPaneOut = useCallback(
+    (paneId: string) => {
+      if (panes.length <= 1) return;
+      onPopOut?.();
+      closePane(paneId);
+    },
+    [panes.length, onPopOut, closePane],
+  );
+
+  // Drag the grip; release outside the panel (or a plain click) pops the pane.
+  const startPopDrag = useCallback(
+    (paneId: string) => (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let moved = false;
+      setPopout({ paneId, x: startX, y: startY, outside: false });
+
+      const isOutside = (x: number, y: number) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return false;
+        return x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
+      };
+
+      const onMove = (ev: MouseEvent) => {
+        if (Math.abs(ev.clientX - startX) > 3 || Math.abs(ev.clientY - startY) > 3) moved = true;
+        setPopout({ paneId, x: ev.clientX, y: ev.clientY, outside: isOutside(ev.clientX, ev.clientY) });
+      };
+      const onUp = (ev: MouseEvent) => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        setPopout(null);
+        // A plain click (no real drag) pops out too; a drag only pops if it
+        // ends outside the split panel, so an accidental in-panel drag cancels.
+        if (!moved || isOutside(ev.clientX, ev.clientY)) popPaneOut(paneId);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [popPaneOut],
+  );
 
   // ── Divider drag ───────────────────────────────────────────────────────────
 
@@ -195,18 +255,30 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
               className="group/pane relative min-h-0 min-w-0 p-1"
               style={{ flexBasis: `${pane.size}%`, flexShrink: 0, flexGrow: 0 }}
             >
-              {/* Per-pane close button */}
+              {/* Per-pane controls — pop out + close */}
               {multi && (
-                <button
-                  type="button"
-                  onClick={() => closePane(pane.id)}
-                  title="Close this pane"
-                  className="rt-btn absolute right-2 top-2 z-20 flex h-5 w-5 items-center justify-center opacity-0 transition-opacity group-hover/pane:opacity-100"
-                >
-                  <Icon name="close" size={10} aria-label="Close pane" />
-                </button>
+                <div className="absolute right-2 top-2 z-20 flex items-center gap-1 opacity-0 transition-opacity group-hover/pane:opacity-100">
+                  <button
+                    type="button"
+                    onMouseDown={startPopDrag(pane.id)}
+                    title="Pop out into its own panel — drag out or click"
+                    className={`rt-btn flex h-5 w-5 cursor-grab items-center justify-center active:cursor-grabbing ${
+                      popout?.paneId === pane.id ? "rt-btn-active" : ""
+                    }`}
+                  >
+                    <Icon name="popOut" size={10} aria-label="Pop out pane" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => closePane(pane.id)}
+                    title="Close this pane"
+                    className="rt-btn flex h-5 w-5 items-center justify-center"
+                  >
+                    <Icon name="close" size={10} aria-label="Close pane" />
+                  </button>
+                </div>
               )}
-              <TerminalViewport cwd={cwd} className="h-full w-full" />
+              <TerminalViewport cwd={cwd} active={active} className="h-full w-full" />
             </div>
 
             {idx < panes.length - 1 && (
@@ -218,6 +290,22 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
           </Fragment>
         ))}
       </div>
+
+      {/* Drag hint — follows the cursor while a pane is being popped out. */}
+      {popout && (
+        <div
+          className="rt-panel pointer-events-none fixed z-[300] flex items-center gap-1.5 rounded px-2 py-1 text-[11px] font-medium shadow-lg"
+          style={{
+            left: popout.x + 12,
+            top: popout.y + 12,
+            background: "var(--rt-surface)",
+            color: popout.outside ? "var(--rt-accent)" : "var(--rt-text-muted)",
+          }}
+        >
+          <Icon name="popOut" size={12} />
+          {popout.outside ? "Release to pop out" : "Drag outside to pop out"}
+        </div>
+      )}
     </div>
   );
 });

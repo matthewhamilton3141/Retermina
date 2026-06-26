@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 
 import Icon, { type IconName } from "../Icon";
-import { useWorkspaceStore } from "../../store/workspace";
+import { useWorkspacesStore } from "../../store/workspaces";
 
 export interface PanelFrameProps {
   icon: IconName;
   title: string;
+  /** The tab this panel belongs to — font sizes are stored per tab. */
+  workspaceId: string;
   /** Used to read/write per-panel font size from the workspace store. */
   panelId: string;
   onClose?: () => void;
@@ -16,9 +18,12 @@ const STEP = 10;
 const MIN  = 70;
 const MAX  = 150;
 
-export function PanelFrame({ icon, title, panelId, onClose, children }: PanelFrameProps) {
-  const fontSize         = useWorkspaceStore((s) => s.panelFontSizes[panelId] ?? 100);
-  const setPanelFontSize = useWorkspaceStore((s) => s.setPanelFontSize);
+export function PanelFrame({ icon, title, workspaceId, panelId, onClose, children }: PanelFrameProps) {
+  const fontSize = useWorkspacesStore(
+    (s) => s.tabs.find((t) => t.id === workspaceId)?.panelFontSizes[panelId] ?? 100,
+  );
+  const setFont = useWorkspacesStore((s) => s.setPanelFontSize);
+  const setPanelFontSize = (id: string, size: number) => setFont(workspaceId, id, size);
 
   const zoomOut = () => setPanelFontSize(panelId, fontSize - STEP);
   const zoomIn  = () => setPanelFontSize(panelId, fontSize + STEP);

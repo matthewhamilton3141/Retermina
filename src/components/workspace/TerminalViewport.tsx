@@ -54,6 +54,13 @@ export interface TerminalViewportProps {
    * most recently.
    */
   registerWithBus?: boolean;
+  /**
+   * Whether this viewport's workspace tab is currently in the foreground. When
+   * a backgrounded tab is re-activated this flips to true and the terminal
+   * re-claims the Iris bus, so commands typed into Iris reach the terminal the
+   * user is actually looking at rather than whichever tab connected last.
+   */
+  active?: boolean;
 }
 
 /**
@@ -75,8 +82,11 @@ export function TerminalViewport({
   onExit,
   initialCommand,
   registerWithBus = true,
+  active = true,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Re-claims the Iris bus for this terminal; populated once the PTY connects.
+  const registerBusRef = useRef<(() => void) | null>(null);
   // Keep the latest onExit without re-running the (heavy) PTY effect.
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
@@ -231,13 +241,17 @@ export function TerminalViewport({
         if (registerWithBus) {
           // Expose this session to Iris so it can run commands here. Registered
           // through the module-level bus (not React state) so the command bar
-          // never re-renders this memoized panel.
-          terminalBus.set({
-            sessionId: id,
-            run: (cmd) => void writeToPty(id, `${cmd}\r`),
-            write: (data) => void writeToPty(id, data),
-            focus: () => term.focus(),
-          });
+          // never re-renders this memoized panel. Stored in a ref too so a tab
+          // re-activation can re-claim the bus (see the `active` effect below).
+          const register = () =>
+            terminalBus.set({
+              sessionId: id,
+              run: (cmd) => void writeToPty(id, `${cmd}\r`),
+              write: (data) => void writeToPty(id, data),
+              focus: () => term.focus(),
+            });
+          registerBusRef.current = register;
+          register();
         }
       })
       .catch((error) => {
@@ -266,6 +280,7 @@ export function TerminalViewport({
     return () => {
       disposed = true;
       ptyWriteRef.current = null;
+      registerBusRef.current = null;
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
       resultsSub.dispose();
@@ -287,6 +302,13 @@ export function TerminalViewport({
       termRef.current.options.theme = { ...terminalTheme };
     }
   }, [terminalTheme]);
+
+  // When this terminal's tab moves to the foreground, re-claim the Iris bus so
+  // Iris drives the terminal the user is now looking at. No-op until the PTY
+  // has connected (registerBusRef populated) and only when bus-registered.
+  useEffect(() => {
+    if (active) registerBusRef.current?.();
+  }, [active]);
 
   // Focus the search field whenever the bar opens.
   useEffect(() => {

@@ -12,12 +12,16 @@ import { useAppStore } from "./store/app";
 import { useEditorStore } from "./store/editor";
 import { useSessionStore } from "./store/session";
 import { useUpdaterStore } from "./store/updater";
+import { useWorkspacesStore } from "./store/workspaces";
 
 function App() {
   const view          = useAppStore((s) => s.view);
-  const workspaceCwd  = useAppStore((s) => s.workspaceCwd);
   const openTerminal  = useAppStore((s) => s.openTerminal);
   const goToLaunch    = useAppStore((s) => s.goToLaunch);
+  // cwd of the foreground workspace tab — drives the file/content search scope.
+  const workspaceCwd  = useWorkspacesStore(
+    (s) => s.tabs.find((t) => t.id === s.activeId)?.cwd ?? null,
+  );
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
@@ -69,7 +73,7 @@ function App() {
         <TitleBar />
         <div className="flex-1 min-h-0">
           {view === "workspace" ? (
-            <TerminalWorkspace cwd={workspaceCwd} onLeave={goToLaunch} />
+            <TerminalWorkspace onLeave={goToLaunch} />
           ) : (
             <LaunchHub />
           )}

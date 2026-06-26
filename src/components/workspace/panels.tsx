@@ -14,20 +14,41 @@ import LivePreviewPanel from "./LivePreviewPanel";
 import LocalhostPanel from "./LocalhostPanel";
 import { SplitTerminalPanel } from "./SplitTerminalPanel";
 import TerminalViewport from "./TerminalViewport";
+import { useWorkspacesStore } from "../../store/workspaces";
 
 /** Context handed to a panel renderer. */
 export interface PanelRenderContext {
   /** Working directory of the active workspace (null = blank terminal). */
   cwd: string | null;
+  /** The tab this panel is rendered in. */
+  workspaceId: string;
+  /** Whether this tab is the foreground one. */
+  active: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Terminal                                                                   */
 /* -------------------------------------------------------------------------- */
 
-// Terminal panel is now split-capable — see SplitTerminalPanel.tsx
-const TerminalPanel = memo(function TerminalPanel({ cwd }: { cwd: string | null }) {
-  return <SplitTerminalPanel cwd={cwd} />;
+// Terminal panel is now split-capable — see SplitTerminalPanel.tsx. Popping a
+// pane out adds a fresh terminal panel to this tab's grid; the split's own
+// close logic then hands the vacated space back to the remaining pane.
+const TerminalPanel = memo(function TerminalPanel({
+  cwd,
+  workspaceId,
+  active,
+}: {
+  cwd: string | null;
+  workspaceId: string;
+  active: boolean;
+}) {
+  return (
+    <SplitTerminalPanel
+      cwd={cwd}
+      active={active}
+      onPopOut={() => useWorkspacesStore.getState().addTerminalPanel(workspaceId)}
+    />
+  );
 });
 
 /* -------------------------------------------------------------------------- */
@@ -347,7 +368,9 @@ export const PANEL_RENDERERS: Record<
   PanelKind,
   (ctx: PanelRenderContext) => ReactNode
 > = {
-  terminal: ({ cwd }) => <TerminalPanel cwd={cwd} />,
+  terminal: ({ cwd, workspaceId, active }) => (
+    <TerminalPanel cwd={cwd} workspaceId={workspaceId} active={active} />
+  ),
   fileExplorer: ({ cwd }) => <FileExplorerPanel cwd={cwd} />,
   codeView: () => <CodeViewPanel />,
   localhost: () => <LocalhostPanel />,
