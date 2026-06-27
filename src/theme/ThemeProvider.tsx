@@ -18,6 +18,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useState,
   type ReactNode,
 } from "react";
 import type { ITheme } from "@xterm/xterm";
@@ -63,6 +64,35 @@ const ThemeContext = createContext<ThemeContextValue>({
   setTheme: () => {},
 });
 
+/**
+ * Resolve a CSS custom property that holds a colour (possibly a `color-mix()`
+ * or `var()` expression) to a concrete `rgb(...)` string. Custom properties
+ * aren't computed to a resolved colour on their own, so we read it back through
+ * a throwaway element's `background-color`, which the engine *does* resolve.
+ * Returns null if it resolves to transparent (i.e. the var isn't set).
+ */
+function resolveCssColor(varName: string): string | null {
+  const probe = document.createElement("div");
+  probe.style.cssText = `position:absolute;visibility:hidden;background-color:var(${varName})`;
+  document.body.appendChild(probe);
+  const computed = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  if (!computed || computed === "rgba(0, 0, 0, 0)" || computed === "transparent") return null;
+
+  // `color-mix()` resolves to CSS Color 4 `color(srgb …)`, which xterm's parser
+  // doesn't accept. Normalize any valid colour string to `#rrggbb` via a 1×1
+  // canvas, which xterm always understands.
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return computed;
+  ctx.fillStyle = computed;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  const hex = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
 /** Convert a 6-digit hex colour to an rgba() string. */
 function hexToRgba(hex: string, alpha: number): string {
   const n = parseInt(hex.replace("#", ""), 16);
@@ -104,6 +134,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const fontId      = useAppStore((state) => state.fontId);
   const uiScale     = useAppStore((state) => state.uiScale);
   const customFonts = useAppStore((state) => state.customFonts);
+
+  // The engine's CSS terminal surface, resolved to a concrete colour. Kept in
+  // state because it can't be derived from JS alone — for engines like Pastel
+  // it's `color-mix(--rt-accent …)`, so it depends on the live accent and must
+  // be read back from the cascade after the theme/accent are applied below.
+  const [terminalBg, setTerminalBg] = useState<string | null>(null);
 
   // Tolerate an unknown persisted id by resolving to the default engine.
   const theme = resolveTheme(themeId);
@@ -161,6 +197,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       el.style.removeProperty("font-size");
     }
+
+    // Now that data-theme + accent are applied, read the engine's resolved
+    // terminal surface so the xterm canvas can paint with the exact same colour
+    // as its panel (and pick up accent-derived tints, e.g. Pastel/Glass).
+    setTerminalBg(resolveCssColor("--rt-terminal-bg"));
   }, [theme.id, accentColor, fontId, customFonts, uiScale]);
 
   // Overlay accent-dependent terminal colours so the terminal and the Claude
@@ -182,7 +223,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const hasCustomAccent = !!accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor);
     const accent = hasCustomAccent ? accentColor! : theme.accentColor;
 
+    // Paint the canvas with the engine's CSS terminal surface so it matches the
+    // panel exactly (and follows accent-derived tints). cursorAccent — the
+    // glyph under a block cursor — tracks the background so it stays legible.
+    const background = terminalBg ?? theme.terminal.background;
+
     const overrides: Partial<ITheme> = {
+      background,
+      cursorAccent:        background,
       cursor:              accent,
       selectionBackground: accent,
       // Contrast-aware so a light accent (e.g. white) doesn't render the
@@ -199,7 +247,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
 
     return { ...theme.terminal, ...overrides };
-  }, [theme, accentColor]);
+  }, [theme, accentColor, terminalBg]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
