@@ -163,22 +163,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [theme.id, accentColor, fontId, customFonts, uiScale]);
 
-  // Overlay accent-dependent terminal colours so cursor + selection track the
-  // live accent choice. Only cursor and selection are overridden — the ANSI
-  // colour palette slots (red, blue, green, …) are left untouched because
-  // terminal apps like Claude Code use them for their own UI colours.
+  // Overlay accent-dependent terminal colours so the terminal and the Claude
+  // Code panel track the live accent choice.
   //
-  // The selection is painted as a SOLID accent fill with white text to mirror
-  // the web `::selection` look (see index.css), so a highlight inside the
-  // Terminal reads identically to one inside the Code window.
+  // cursor + selection always follow the accent (the selection is a SOLID
+  // accent fill with contrast-aware text, mirroring the web `::selection` look
+  // in index.css so a highlight reads identically in the Terminal and Code).
+  //
+  // When the user picks a CUSTOM accent we additionally retint the ANSI
+  // "accent-hue" slots — blue and magenta, normal + bright. Terminal UIs,
+  // including the embedded Claude Code CLI, draw their primary/brand accent
+  // from these slots, so without this a blue accent still shows the engine's
+  // default violet (e.g. Sleek's magenta `#c084fc`). Red / green / yellow /
+  // cyan are deliberately left alone so errors, success, warnings, and info
+  // keep their conventional meaning. With no custom accent we leave the
+  // engine's hand-tuned palette exactly as authored.
   const terminalTheme = useMemo<ITheme>(() => {
-    // Resolve the active accent: explicit override, else the engine's brand.
-    const accent =
-      accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor)
-        ? accentColor
-        : theme.accentColor;
-    return {
-      ...theme.terminal,
+    const hasCustomAccent = !!accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor);
+    const accent = hasCustomAccent ? accentColor! : theme.accentColor;
+
+    const overrides: Partial<ITheme> = {
       cursor:              accent,
       selectionBackground: accent,
       // Contrast-aware so a light accent (e.g. white) doesn't render the
@@ -186,6 +190,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       selectionForeground: accentContrast(accent),
       selectionInactiveBackground: hexToRgba(accent, 0.45),
     };
+
+    if (hasCustomAccent) {
+      overrides.blue          = accent;
+      overrides.brightBlue    = accent;
+      overrides.magenta       = accent;
+      overrides.brightMagenta = accent;
+    }
+
+    return { ...theme.terminal, ...overrides };
   }, [theme, accentColor]);
 
   const value = useMemo<ThemeContextValue>(
