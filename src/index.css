@@ -764,3 +764,79 @@ body {
 
 .rt-code .token.bold { font-weight: 600; }
 .rt-code .token.italic { font-style: italic; }
+
+/*
+ * Reduced motion.
+ *
+ * The app leans on transitions for hover states, panel drags, menus and the
+ * update progress bar. When motion is reduced these collapse to instant —
+ * animations still "complete" (so nothing gets stuck mid-state) but without the
+ * perceptible movement. The TitleBar window animations honor the same decision
+ * in JS via prefersReducedMotion().
+ *
+ * The policy is a `data-motion` attribute on <html> (set by ThemeProvider):
+ *   reduced → always suppress
+ *   full    → never suppress (overrides the OS)
+ *   system  → defer to the OS prefers-reduced-motion media query (also the
+ *             behavior when the attribute is absent, e.g. first paint)
+ */
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]):not([data-motion="reduced"]) *,
+  :root:not([data-motion="full"]):not([data-motion="reduced"]) *::before,
+  :root:not([data-motion="full"]):not([data-motion="reduced"]) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Accessibility overrides.
+ *
+ * Set on <html> by ThemeProvider as `data-contrast` / `data-transparency`.
+ * Declared after the engine token blocks so, at equal specificity (both are
+ * single attribute selectors on <html>), these win. They only re-point the
+ * shared `--rt-*` tokens, so every semantic class picks up the change with no
+ * per-component edits — and they layer on top of whichever engine is active.
+ */
+
+/* Increase contrast — pull muted/faint text back toward the body text colour
+ * and give borders a visible, text-tinted edge. Generic across light and dark
+ * engines because everything is mixed from each engine's own --rt-text. */
+[data-contrast="high"] {
+  --rt-text-muted: color-mix(in srgb, var(--rt-text) 82%, transparent);
+  --rt-text-faint: color-mix(in srgb, var(--rt-text) 62%, transparent);
+  --rt-border: color-mix(in srgb, var(--rt-text) 45%, transparent);
+  --rt-border-width: max(var(--rt-border-width), 1.5px);
+  --rt-ring: var(--rt-accent);
+}
+
+/* Reduce transparency — drop every frosted blur and make the (otherwise
+ * desktop-revealing) Glass window background fully opaque. */
+[data-transparency="reduced"] {
+  --rt-backdrop: none !important;
+}
+
+[data-transparency="reduced"] .rt-app,
+[data-transparency="reduced"] .rt-surface,
+[data-transparency="reduced"] .rt-panel,
+[data-transparency="reduced"] .rt-panel-header,
+[data-transparency="reduced"] .rt-toolbar,
+[data-transparency="reduced"] .rt-titlebar {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="glass"][data-transparency="reduced"] {
+  --rt-bg: rgb(236, 238, 243);
+}

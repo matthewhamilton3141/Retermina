@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from "../lib/theme";
-import { THEME_FONT_CATEGORY, fontIdForCategory } from "../lib/fonts";
+import { THEME_FONT_CATEGORY, TERMINAL_FONT_SIZE, fontIdForCategory } from "../lib/fonts";
 import { useRecentStore } from "./recent";
 import { useSessionStore } from "./session";
 import { useWorkspacesStore } from "./workspaces";
@@ -10,6 +10,8 @@ import { useWorkspacesStore } from "./workspaces";
 export type AppView = "launch" | "workspace";
 export type ToolbarStyle = "dropdown" | "icons";
 export type TopBarStyle  = "icon-only" | "icon-and-text";
+/** Motion policy: follow the OS, force motion on, or force reduced motion. */
+export type MotionPreference = "system" | "full" | "reduced";
 
 export interface CustomTheme {
   id: string;
@@ -40,10 +42,22 @@ interface AppState {
   topBarStyle: TopBarStyle;
   accentColor: string | null;
   fontId: string;
+  /** Terminal monospace typeface id (built-in mono, uploaded font, or default). */
+  terminalFontId: string;
+  /** Terminal font size in px (clamped to TERMINAL_FONT_SIZE bounds). */
+  terminalFontSize: number;
   /** When true, switching theme also swaps the font to the theme's category. */
   autoPairFont: boolean;
   /** Global workspace text scale as a percentage (80–130). */
   uiScale: number;
+  /** Whether to follow the OS reduce-motion setting or force it on/off. */
+  motionPreference: MotionPreference;
+  /** Strengthen borders + text contrast across every theme. */
+  highContrast: boolean;
+  /** Disable frosted-glass blur / translucency for legibility. */
+  reduceTransparency: boolean;
+  /** Whether the terminal cursor blinks. */
+  terminalCursorBlink: boolean;
   customThemes: CustomTheme[];
   customFonts: CustomFont[];
 
@@ -54,8 +68,14 @@ interface AppState {
   setTopBarStyle: (style: TopBarStyle) => void;
   setAccentColor: (color: string | null) => void;
   setFontId: (id: string) => void;
+  setTerminalFontId: (id: string) => void;
+  setTerminalFontSize: (size: number) => void;
   setAutoPairFont: (on: boolean) => void;
   setUiScale: (scale: number) => void;
+  setMotionPreference: (pref: MotionPreference) => void;
+  setHighContrast: (on: boolean) => void;
+  setReduceTransparency: (on: boolean) => void;
+  setTerminalCursorBlink: (on: boolean) => void;
   saveCustomTheme: (name: string) => void;
   removeCustomTheme: (id: string) => void;
   addCustomFont: (font: CustomFont) => void;
@@ -76,8 +96,14 @@ export const useAppStore = create<AppState>()(
       topBarStyle: "icon-only",
       accentColor: null,
       fontId: "default",
+      terminalFontId: "default",
+      terminalFontSize: TERMINAL_FONT_SIZE.default,
       autoPairFont: false,
       uiScale: 100,
+      motionPreference: "system",
+      highContrast: false,
+      reduceTransparency: false,
+      terminalCursorBlink: true,
       customThemes: [],
       customFonts: [],
 
@@ -110,6 +136,14 @@ export const useAppStore = create<AppState>()(
       setTopBarStyle: (style) => set({ topBarStyle: style }),
       setAccentColor: (color) => set({ accentColor: color }),
       setFontId: (id) => set({ fontId: id }),
+      setTerminalFontId: (id) => set({ terminalFontId: id }),
+      setTerminalFontSize: (size) =>
+        set({
+          terminalFontSize: Math.max(
+            TERMINAL_FONT_SIZE.min,
+            Math.min(TERMINAL_FONT_SIZE.max, Math.round(size)),
+          ),
+        }),
       setAutoPairFont: (on) => {
         set({ autoPairFont: on });
         // Turning it on immediately pairs the current theme's font.
@@ -120,6 +154,10 @@ export const useAppStore = create<AppState>()(
         }
       },
       setUiScale: (scale) => set({ uiScale: Math.max(80, Math.min(130, Math.round(scale))) }),
+      setMotionPreference: (pref) => set({ motionPreference: pref }),
+      setHighContrast: (on) => set({ highContrast: on }),
+      setReduceTransparency: (on) => set({ reduceTransparency: on }),
+      setTerminalCursorBlink: (on) => set({ terminalCursorBlink: on }),
 
       saveCustomTheme: (name) => {
         const { themeId, accentColor } = get();
@@ -151,18 +189,30 @@ export const useAppStore = create<AppState>()(
       name: "retermina.app",
       version: APP_STATE_VERSION,
       partialize: (s) => ({
+        // Persisted so launching the app returns to wherever you left off — the
+        // workspace (with its tabs/layout restored by retermina.workspaces) or
+        // the Launch Hub. goToLaunch sets this to "launch", so quitting from the
+        // hub still reopens on the hub.
+        view: s.view,
         themeId: s.themeId,
         toolbarStyle: s.toolbarStyle,
         topBarStyle: s.topBarStyle,
         accentColor: s.accentColor,
         fontId: s.fontId,
+        terminalFontId: s.terminalFontId,
+        terminalFontSize: s.terminalFontSize,
         autoPairFont: s.autoPairFont,
         uiScale: s.uiScale,
+        motionPreference: s.motionPreference,
+        highContrast: s.highContrast,
+        reduceTransparency: s.reduceTransparency,
+        terminalCursorBlink: s.terminalCursorBlink,
         customThemes: s.customThemes,
         customFonts: s.customFonts,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
+        const view: AppView = p?.view === "workspace" || p?.view === "launch" ? p.view : current.view;
         const themeId = isThemeId(p?.themeId) ? p!.themeId : current.themeId;
         const toolbarStyle: ToolbarStyle =
           p?.toolbarStyle === "dropdown" || p?.toolbarStyle === "icons"
@@ -175,11 +225,22 @@ export const useAppStore = create<AppState>()(
           : p?.accentColor === null ? null
           : current.accentColor;
         const fontId = typeof p?.fontId === "string" ? p.fontId : current.fontId;
+        const terminalFontId = typeof p?.terminalFontId === "string" ? p.terminalFontId : current.terminalFontId;
+        const terminalFontSize =
+          typeof p?.terminalFontSize === "number"
+            ? Math.max(TERMINAL_FONT_SIZE.min, Math.min(TERMINAL_FONT_SIZE.max, Math.round(p.terminalFontSize)))
+            : current.terminalFontSize;
         const autoPairFont = typeof p?.autoPairFont === "boolean" ? p.autoPairFont : current.autoPairFont;
         const uiScale = typeof p?.uiScale === "number" ? p.uiScale : current.uiScale;
+        const motionPreference: MotionPreference =
+          p?.motionPreference === "system" || p?.motionPreference === "full" || p?.motionPreference === "reduced"
+            ? p.motionPreference : current.motionPreference;
+        const highContrast = typeof p?.highContrast === "boolean" ? p.highContrast : current.highContrast;
+        const reduceTransparency = typeof p?.reduceTransparency === "boolean" ? p.reduceTransparency : current.reduceTransparency;
+        const terminalCursorBlink = typeof p?.terminalCursorBlink === "boolean" ? p.terminalCursorBlink : current.terminalCursorBlink;
         const customThemes = Array.isArray(p?.customThemes) ? p!.customThemes : current.customThemes;
         const customFonts = Array.isArray(p?.customFonts) ? p!.customFonts : current.customFonts;
-        return { ...current, themeId, toolbarStyle, topBarStyle, accentColor, fontId, autoPairFont, uiScale, customThemes, customFonts };
+        return { ...current, view, themeId, toolbarStyle, topBarStyle, accentColor, fontId, terminalFontId, terminalFontSize, autoPairFont, uiScale, motionPreference, highContrast, reduceTransparency, terminalCursorBlink, customThemes, customFonts };
       },
     },
   ),

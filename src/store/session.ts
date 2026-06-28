@@ -2,15 +2,15 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /**
- * Persists the last active session so the app can auto-reconnect on next
- * launch: the workspace cwd and the file open in the Code panel (its *path*
- * only — never its contents, and never any PTY/terminal buffer). Cleared when
- * the user explicitly navigates back to the Launch Hub, so restarting after
- * that lands on the hub, not the workspace.
+ * Persists the file open in the Code panel across launches (its *path* only —
+ * never its contents, and never any PTY/terminal buffer), so reopening the app
+ * restores that file too. Cleared when the user navigates back to the Launch
+ * Hub.
  *
- * The panel layout itself is restored separately by the persisted
- * `retermina.workspace-layout` store, so this only needs to carry the bits
- * that store doesn't: which folder, and which file.
+ * Which view the app reopens to (Launch Hub vs. workspace) is persisted by the
+ * app store's `view`; the workspace's tabs + panel layout by the persisted
+ * `retermina.workspaces` store. `lastCwd` is kept here only to drop the open
+ * file when the active folder changes (a file mustn't leak across workspaces).
  */
 interface SessionState {
   lastCwd: string | null;

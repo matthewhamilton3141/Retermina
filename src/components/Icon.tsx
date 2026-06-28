@@ -15,6 +15,7 @@
  * bespoke icon set later only requires editing `iconMap` below.
  */
 import {
+  Accessibility,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -125,6 +126,7 @@ export const iconMap = {
   theme: Palette,
   font: Type,
   info: Info,
+  accessibility: Accessibility,
   marketplace: Store,
   drag: GripVertical,
   columns: Columns,

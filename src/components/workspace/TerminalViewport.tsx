@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -15,6 +15,8 @@ import {
 } from "../../lib/pty";
 import { terminalBus } from "../../lib/terminalBus";
 import { terminalColorFgbg } from "../../lib/theme";
+import { resolveTerminalFontStack } from "../../lib/fonts";
+import { useAppStore } from "../../store/app";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useTauriFileDrop } from "../../hooks/useTauriFileDrop";
 import Icon from "../Icon";
@@ -128,6 +130,32 @@ export function TerminalViewport({
   const terminalThemeRef = useRef(terminalTheme);
   terminalThemeRef.current = terminalTheme;
 
+  // Terminal typeface — like the theme, xterm paints from a JS font setting
+  // rather than CSS, so it can't inherit the UI font token and needs its own
+  // preference. Refs mirror the latest values so the PTY effect can seed the
+  // initial Terminal without depending on them (which would respawn the shell
+  // on every font tweak); a separate effect applies live changes + refits.
+  const terminalFontId   = useAppStore((s) => s.terminalFontId);
+  const terminalFontSize = useAppStore((s) => s.terminalFontSize);
+  const customFonts      = useAppStore((s) => s.customFonts);
+  const terminalFontFamily = useMemo(
+    () => resolveTerminalFontStack(terminalFontId, customFonts),
+    [terminalFontId, customFonts],
+  );
+  const fontFamilyRef = useRef(terminalFontFamily);
+  fontFamilyRef.current = terminalFontFamily;
+  const fontSizeRef = useRef(terminalFontSize);
+  fontSizeRef.current = terminalFontSize;
+  // Cursor blink is an accessibility preference (a blinking cursor can be a
+  // distraction / photosensitivity concern). Same ref-seed pattern.
+  const terminalCursorBlink = useAppStore((s) => s.terminalCursorBlink);
+  const cursorBlinkRef = useRef(terminalCursorBlink);
+  cursorBlinkRef.current = terminalCursorBlink;
+  // Populated inside the PTY effect: refits the terminal to its container and
+  // resyncs the PTY dimensions. Lets the font effect trigger a proper refit
+  // without owning the FitAddon instance (which lives in that effect).
+  const refitRef = useRef<(() => void) | null>(null);
+
   // Scrollback search — the addon is created inside the PTY effect; these
   // refs/state let the search UI (rendered outside that effect) drive it.
   const searchAddonRef = useRef<SearchAddon | null>(null);
@@ -145,10 +173,9 @@ export function TerminalViewport({
     const pendingInput: string[] = [];
 
     const term = new Terminal({
-      fontFamily:
-        'ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Code", monospace',
-      fontSize: 13,
-      cursorBlink: true,
+      fontFamily: fontFamilyRef.current,
+      fontSize: fontSizeRef.current,
+      cursorBlink: cursorBlinkRef.current,
       theme: terminalThemeRef.current,
     });
     termRef.current = term;
@@ -276,11 +303,13 @@ export function TerminalViewport({
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(container);
     window.addEventListener("resize", handleResize);
+    refitRef.current = handleResize;
 
     return () => {
       disposed = true;
       ptyWriteRef.current = null;
       registerBusRef.current = null;
+      refitRef.current = null;
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
       resultsSub.dispose();
@@ -302,6 +331,25 @@ export function TerminalViewport({
       termRef.current.options.theme = { ...terminalTheme };
     }
   }, [terminalTheme]);
+
+  // Restyle the live terminal when the font family or size changes, without
+  // recreating it. Cell metrics shift, so refit + resync the PTY afterwards.
+  // Web fonts may still be loading, so refit again once they're ready to settle
+  // glyph widths to real metrics rather than the fallback's.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontFamily = terminalFontFamily;
+    term.options.fontSize = terminalFontSize;
+    refitRef.current?.();
+    void document.fonts.ready.then(() => refitRef.current?.());
+  }, [terminalFontFamily, terminalFontSize]);
+
+  // Toggle the live cursor blink (no refit needed — metrics are unchanged).
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.cursorBlink = terminalCursorBlink;
+  }, [terminalCursorBlink]);
 
   // When this terminal's tab moves to the foreground, re-claim the Iris bus so
   // Iris drives the terminal the user is now looking at. No-op until the PTY

@@ -5,6 +5,7 @@ import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 
 import Icon from "./Icon";
 import { isPreviewOpen, closePreviewWindow } from "../lib/previewWindow";
+import { prefersReducedMotion } from "../lib/motion";
 
 const appWindow = getCurrentWebviewWindow();
 
@@ -98,7 +99,7 @@ export function TitleBar() {
   async function toggleMaximize() {
     if (animatingRef.current) return;
 
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduceMotion = prefersReducedMotion();
 
     try {
       animatingRef.current = true;

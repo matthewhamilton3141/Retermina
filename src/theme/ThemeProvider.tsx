@@ -133,6 +133,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const accentColor = useAppStore((state) => state.accentColor);
   const fontId      = useAppStore((state) => state.fontId);
   const uiScale     = useAppStore((state) => state.uiScale);
+  const motionPreference    = useAppStore((state) => state.motionPreference);
+  const highContrast        = useAppStore((state) => state.highContrast);
+  const reduceTransparency  = useAppStore((state) => state.reduceTransparency);
   const customFonts = useAppStore((state) => state.customFonts);
 
   // The engine's CSS terminal surface, resolved to a concrete colour. Kept in
@@ -163,6 +166,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const el = document.documentElement;
     el.dataset.theme = theme.id;
+    // Motion policy — index.css reads this to follow / force / suppress motion.
+    el.dataset.motion = motionPreference;
+    // Accessibility toggles — index.css overrides theme tokens off these.
+    el.dataset.contrast = highContrast ? "high" : "normal";
+    el.dataset.transparency = reduceTransparency ? "reduced" : "full";
 
     if (accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor)) {
       el.style.setProperty("--rt-accent",            accentColor);
@@ -202,7 +210,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // terminal surface so the xterm canvas can paint with the exact same colour
     // as its panel (and pick up accent-derived tints, e.g. Pastel/Glass).
     setTerminalBg(resolveCssColor("--rt-terminal-bg"));
-  }, [theme.id, accentColor, fontId, customFonts, uiScale]);
+  }, [theme.id, accentColor, fontId, customFonts, uiScale, motionPreference, highContrast, reduceTransparency]);
 
   // Overlay accent-dependent terminal colours so the terminal and the Claude
   // Code panel track the live accent choice.

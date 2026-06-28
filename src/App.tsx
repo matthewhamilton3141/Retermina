@@ -16,7 +16,6 @@ import { useWorkspacesStore } from "./store/workspaces";
 
 function App() {
   const view          = useAppStore((s) => s.view);
-  const openTerminal  = useAppStore((s) => s.openTerminal);
   const goToLaunch    = useAppStore((s) => s.goToLaunch);
   // cwd of the foreground workspace tab — drives the file/content search scope.
   const workspaceCwd  = useWorkspacesStore(
@@ -28,13 +27,13 @@ function App() {
   const [contentSearchOpen, setContentSearchOpen] = useState(false);
 
   // ── Session reconnect — run once on mount ────────────────────────────────
-  // Reopen the last workspace and the file that was open in the Code panel.
-  // The panel layout itself is restored by the persisted workspace-layout
-  // store; this only re-supplies the cwd and the open file (path only).
+  // The view (Launch Hub vs. workspace) is restored by the persisted app store,
+  // and the workspace's tabs + panel layout by the persisted workspaces store.
+  // All that's left is re-opening the file that was showing in the Code panel
+  // (its *path* only — never its contents), and only when a workspace is shown.
   useEffect(() => {
-    const { lastCwd, openFilePath } = useSessionStore.getState();
-    if (!lastCwd) return;
-    openTerminal(lastCwd);
+    if (useAppStore.getState().view !== "workspace") return;
+    const { openFilePath } = useSessionStore.getState();
     if (openFilePath) void useEditorStore.getState().openFile(openFilePath);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
