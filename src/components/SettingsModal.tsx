@@ -14,15 +14,17 @@ import ThemeTab from "./settings/ThemeTab";
 import AppearanceTab from "./settings/AppearanceTab";
 import AccessibilityTab from "./settings/AccessibilityTab";
 import FontTab from "./settings/FontTab";
+import ShortcutsTab from "./settings/ShortcutsTab";
 import VersionTab from "./settings/VersionTab";
 
-type TabId = "theme" | "appearance" | "accessibility" | "font" | "version";
+type TabId = "theme" | "appearance" | "accessibility" | "font" | "shortcuts" | "version";
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: "theme",         label: "Theme",         icon: "palette" },
   { id: "appearance",    label: "Appearance",    icon: "layoutGrid" },
   { id: "accessibility", label: "Accessibility", icon: "accessibility" },
   { id: "font",          label: "Font",          icon: "font" },
+  { id: "shortcuts",     label: "Shortcuts",     icon: "keyboard" },
   { id: "version",       label: "Version",       icon: "info" },
 ];
 
@@ -47,6 +49,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       case "appearance":    return <AppearanceTab />;
       case "accessibility": return <AccessibilityTab />;
       case "font":          return <FontTab />;
+      case "shortcuts":     return <ShortcutsTab />;
       case "version":       return <VersionTab />;
     }
   }, [tab]);

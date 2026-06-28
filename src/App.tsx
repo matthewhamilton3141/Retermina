@@ -13,6 +13,8 @@ import { useEditorStore } from "./store/editor";
 import { useSessionStore } from "./store/session";
 import { useUpdaterStore } from "./store/updater";
 import { useWorkspacesStore } from "./store/workspaces";
+import { useKeybindingsStore, buildChordMap } from "./store/keybindings";
+import { eventToChord, type CommandId } from "./lib/keybindings";
 
 function App() {
   const view          = useAppStore((s) => s.view);
@@ -44,27 +46,65 @@ function App() {
     useUpdaterStore.getState().check({ silent: true });
   }, []);
 
-  // ── Global shortcuts — Cmd/Ctrl+K (commands), Cmd/Ctrl+P (file search),
-  //    Cmd/Ctrl+Shift+F (content search) ────────────────────────────────────
+  // ── Global shortcuts ─────────────────────────────────────────────────────
+  // Bindings come from the keybindings registry (defaults overlaid with the
+  // user's persisted overrides). We match each keydown to a command id and
+  // dispatch. Workspace-scoped commands are ignored on the Launch Hub so their
+  // chords fall through there instead of being swallowed.
+  const kbOverrides = useKeybindingsStore((s) => s.overrides);
   useEffect(() => {
+    const chordMap = buildChordMap(kbOverrides);
+    const workspaceOnly = new Set<CommandId>([
+      "open-settings", "new-tab", "close-tab", "next-tab", "prev-tab",
+      "reset-layout", "back-to-launch",
+    ]);
+
+    const dispatch = (id: CommandId) => {
+      switch (id) {
+        case "command-palette": setPaletteOpen((v) => !v); break;
+        case "file-search":     setFileSearchOpen((v) => !v); break;
+        case "content-search":  setContentSearchOpen((v) => !v); break;
+        case "open-settings": {
+          const s = useAppStore.getState();
+          s.setSettingsOpen(!s.settingsOpen);
+          break;
+        }
+        case "new-tab": useWorkspacesStore.getState().newWorkspace(null); break;
+        case "close-tab": {
+          const { activeId, closeWorkspace } = useWorkspacesStore.getState();
+          if (activeId) closeWorkspace(activeId);
+          break;
+        }
+        case "next-tab":
+        case "prev-tab": {
+          const { tabs, activeId, setActive } = useWorkspacesStore.getState();
+          if (tabs.length < 2) break;
+          const i = Math.max(0, tabs.findIndex((t) => t.id === activeId));
+          const delta = id === "next-tab" ? 1 : -1;
+          setActive(tabs[(i + delta + tabs.length) % tabs.length].id);
+          break;
+        }
+        case "reset-layout": {
+          const { activeId, resetLayout } = useWorkspacesStore.getState();
+          if (activeId) resetLayout(activeId);
+          break;
+        }
+        case "back-to-launch": useAppStore.getState().goToLaunch(); break;
+      }
+    };
+
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setContentSearchOpen((v) => !v);
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
-        e.preventDefault();
-        setFileSearchOpen((v) => !v);
-      }
+      const chord = eventToChord(e);
+      if (!chord) return;
+      const id = chordMap.get(chord);
+      if (!id) return;
+      if (workspaceOnly.has(id) && useAppStore.getState().view !== "workspace") return;
+      e.preventDefault();
+      dispatch(id);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [kbOverrides]);
 
   return (
     <ThemeProvider>

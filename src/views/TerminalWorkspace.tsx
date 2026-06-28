@@ -164,7 +164,8 @@ export function TerminalWorkspace({ onLeave }: TerminalWorkspaceProps) {
   const showLabels   = topBarStyle === "icon-and-text";
   const visibleKinds = new Set(panels.map((p) => p.kind));
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOpen    = useAppStore((s) => s.settingsOpen);
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
 
   // Closing the last workspace returns to the Launch Hub.
   useEffect(() => {

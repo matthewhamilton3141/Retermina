@@ -37,6 +37,8 @@ export interface CustomFont {
 interface AppState {
   view: AppView;
   workspaceCwd: string | null;
+  /** Whether the Settings modal is open (ephemeral — never persisted). */
+  settingsOpen: boolean;
   themeId: ThemeId;
   toolbarStyle: ToolbarStyle;
   topBarStyle: TopBarStyle;
@@ -61,6 +63,7 @@ interface AppState {
   customThemes: CustomTheme[];
   customFonts: CustomFont[];
 
+  setSettingsOpen: (open: boolean) => void;
   openTerminal: (cwd?: string | null) => void;
   goToLaunch: () => void;
   setTheme: (id: ThemeId) => void;
@@ -91,6 +94,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       view: "launch",
       workspaceCwd: null,
+      settingsOpen: false,
       themeId: DEFAULT_THEME_ID,
       toolbarStyle: "dropdown",
       topBarStyle: "icon-only",
@@ -107,6 +111,7 @@ export const useAppStore = create<AppState>()(
       customThemes: [],
       customFonts: [],
 
+      setSettingsOpen: (open) => set({ settingsOpen: open }),
       openTerminal: (cwd = null) => {
         if (cwd) {
           useRecentStore.getState().record(cwd);

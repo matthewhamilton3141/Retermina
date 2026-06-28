@@ -26,6 +26,8 @@ import { useEditorStore } from "../../store/editor";
 interface ExplorerCtx {
   selectedPath: string | null;
   onSelectFile: (path: string) => void;
+  /** Re-root the tree into a folder (double-click to enter). */
+  enterDir: (path: string) => void;
   renamingPath: string | null;
   renameValue: string;
   setRenameValue: (v: string) => void;
@@ -128,7 +130,9 @@ function TreeNode({ entry, depth, refreshKey }: TreeNodeProps) {
           <button
             type="button"
             onClick={toggle}
+            onDoubleClick={() => ctx.enterDir(entry.path)}
             onContextMenu={(e) => ctx.openMenu(e, entry)}
+            title="Double-click to open this folder"
             className={rowBase}
             style={{ paddingLeft: `${indent + 6}px` }}
           >
@@ -301,10 +305,25 @@ export interface FileExplorerPanelProps {
   cwd: string | null;
 }
 
+/** Parent directory of an absolute POSIX path ("/" stays "/"). */
+function parentDir(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx <= 0 ? "/" : trimmed.slice(0, idx);
+}
+
 export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // The folder the tree is rooted at. Defaults to the workspace cwd, but the
+  // user can walk up to parent folders — the workspace/terminal cwd is never
+  // touched. Reset whenever the workspace folder itself changes (tab switch).
+  const [root, setRoot] = useState<string | null>(cwd);
+  useEffect(() => { setRoot(cwd); }, [cwd]);
+  const atWorkspaceRoot = root === cwd;
+  const canGoUp = !!root && root !== "/";
 
   const selectedPath = useEditorStore((s) => s.selectedPath);
   const openFile     = useEditorStore((s) => s.openFile);
@@ -323,22 +342,22 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
   // Full refresh — reloads root entries and bumps refreshKey so all expanded
   // TreeNodes re-fetch their children.
   const refresh = useCallback(() => {
-    if (!cwd) return;
+    if (!root) return;
     setError(null);
-    listDir(cwd)
+    listDir(root)
       .then((data) => {
         setEntries(data);
         setRefreshKey((k) => k + 1);
       })
       .catch((err) => setError(String(err)));
-  }, [cwd]);
+  }, [root]);
 
   // Silent poll — compares listings without clearing UI state.
   // Detects files created externally (terminal, LaunchHub new-file, etc.).
   const silentRefresh = useCallback(async () => {
-    if (!cwd) return;
+    if (!root) return;
     try {
-      const data = await listDir(cwd);
+      const data = await listDir(root);
       setEntries((prev) => {
         const prevSig = prev?.map((e) => e.path).join("\0") ?? "";
         const nextSig = data.map((e) => e.path).join("\0");
@@ -349,17 +368,17 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
     } catch {
       // ignore transient poll errors
     }
-  }, [cwd]);
+  }, [root]);
 
   // Initial load.
   useEffect(() => { refresh(); }, [refresh]);
 
   // Poll every 3 s for external changes.
   useEffect(() => {
-    if (!cwd) return;
+    if (!root) return;
     const id = window.setInterval(() => void silentRefresh(), 3000);
     return () => window.clearInterval(id);
-  }, [cwd, silentRefresh]);
+  }, [root, silentRefresh]);
 
   // Refresh on window focus (e.g. user created a file in another app).
   useEffect(() => {
@@ -370,10 +389,10 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
 
   // Focus the root-level create input when it mounts.
   useEffect(() => {
-    if (creating?.parentPath === cwd) {
+    if (creating?.parentPath === root) {
       setTimeout(() => createInputRef.current?.focus(), 0);
     }
-  }, [creating, cwd]);
+  }, [creating, root]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -439,6 +458,7 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
   const ctxValue: ExplorerCtx = {
     selectedPath,
     onSelectFile: openFile,
+    enterDir: setRoot,
     renamingPath,
     renameValue,
     setRenameValue,
@@ -451,7 +471,7 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
     openMenu,
   };
 
-  const rootIsCreating = creating?.parentPath === cwd;
+  const rootIsCreating = creating?.parentPath === root;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -461,15 +481,34 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
 
         {/* Header toolbar */}
         <div className="rt-divider-b rt-text-muted flex items-center gap-1 px-2.5 py-1.5 text-xs">
+          <button
+            type="button"
+            onClick={() => root && setRoot(parentDir(root))}
+            disabled={!canGoUp}
+            title="Go to parent folder"
+            className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center disabled:opacity-30"
+          >
+            <Icon name="levelUp" size={13} aria-label="Go to parent folder" />
+          </button>
           <Icon name="folder" size={13} className="rt-accent-text shrink-0" />
-          <span className="min-w-0 flex-1 truncate font-medium" title={cwd ?? undefined}>
-            {cwd ? cwd.split("/").pop() || cwd : "No folder open"}
+          <span className="min-w-0 flex-1 truncate font-medium" title={root ?? undefined}>
+            {root ? root.split("/").pop() || root : "No folder open"}
           </span>
-          {cwd && (
+          {!atWorkspaceRoot && cwd && (
+            <button
+              type="button"
+              onClick={() => setRoot(cwd)}
+              title="Back to workspace folder"
+              className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
+            >
+              <Icon name="back" size={12} aria-label="Back to workspace folder" />
+            </button>
+          )}
+          {root && (
             <>
               <button
                 type="button"
-                onClick={() => startNewFile(cwd)}
+                onClick={() => startNewFile(root)}
                 title="New File"
                 className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
               >
@@ -477,7 +516,7 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
               </button>
               <button
                 type="button"
-                onClick={() => startNewFolder(cwd)}
+                onClick={() => startNewFolder(root)}
                 title="New Folder"
                 className="rt-btn flex h-5 w-5 shrink-0 items-center justify-center"
               >
@@ -497,7 +536,7 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
 
         {/* File tree */}
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
-          {!cwd ? (
+          {!root ? (
             <div className="flex h-full items-center justify-center px-4 text-center">
               <p className="rt-text-muted text-xs leading-relaxed">
                 Open a workspace folder to browse its files.
