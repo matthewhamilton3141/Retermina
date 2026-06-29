@@ -43,6 +43,28 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Guard against the "two builds, one release" desync. If this tag was
+      # built before (e.g. the tag was moved and force-pushed), the release
+      # already holds assets from that earlier, separately-signed build.
+      # tauri-action re-uploads the binaries but can leave the *old* latest.json
+      # in place — so the updater verifies the new tarball against a stale
+      # signature and every client rejects the update. Wiping existing assets
+      # first forces this run to regenerate a fully self-consistent set
+      # (tarball + .sig + latest.json all from the same signing pass).
+      - name: Clear stale assets from a previous build of this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.ref_name }}"
+          assets=$(gh release view "$tag" --json assets -q '.assets[].name' 2>/dev/null || true)
+          if [ -n "$assets" ]; then
+            echo "Release $tag already has assets from an earlier build — deleting them:"
+            echo "$assets"
+            for a in $assets; do gh release delete-asset "$tag" "$a" --yes; done
+          else
+            echo "No existing assets for $tag — clean build."
+          fi
+
       - name: Build, sign, and publish the release
         uses: tauri-apps/tauri-action@v0
         env:

@@ -64,6 +64,15 @@ in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 > release stays a draft, existing apps won't offer the update — publish when
 > you're ready for users to receive it.
 
+> **Never move or re-push a tag that has already been built.** Each build signs
+> the app freshly, so a second build produces a *different* signature. If both
+> builds land on the same release, `latest.json` can end up referencing the
+> signature from one build while the attached tarball is from the other — the
+> updater then rejects every download (signature mismatch). The workflow now
+> deletes any pre-existing assets before building to keep a re-run consistent,
+> but the clean fix is to **bump to a new patch version** instead of re-tagging.
+> Need a doc-only change in the tag? Make it *before* you tag.
+
 ## Notes
 
 - **Apple notarization is optional.** Updater signing (above) is separate from
