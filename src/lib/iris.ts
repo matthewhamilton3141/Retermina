@@ -676,9 +676,40 @@ function scoreMacro(query: string, macro: MacroDef): number {
   return best;
 }
 
+/** A user-defined macro (persisted in store/macros). Simpler than MacroDef:
+ *  always available, no context gating, runs its command line as typed. */
+export interface UserMacro {
+  id: string;
+  title: string;
+  /** Space/comma-separated extra match terms. */
+  keywords: string;
+  /** The shell command line to run. */
+  command: string;
+  description?: string;
+}
+
+/** Convert a user macro into a catalog entry (always available, terminal run). */
+function userMacroToDef(m: UserMacro): MacroDef {
+  const extra = m.keywords.split(/[\s,]+/).filter(Boolean).map((k) => k.toLowerCase());
+  return {
+    id: `user-${m.id}`,
+    title: m.title,
+    description: m.description?.trim() || m.command,
+    icon: "spark",
+    group: "My macros",
+    run: "terminal",
+    keywords: [m.title.toLowerCase(), ...extra],
+    priority: 5,
+    available: () => true,
+    command: () => m.command,
+  };
+}
+
 export interface BuildSuggestionsOptions {
   /** Maximum macro suggestions before the run-raw fallback. Defaults to 8. */
   limit?: number;
+  /** User-defined macros, merged into the catalog (see store/macros). */
+  userMacros?: UserMacro[];
 }
 
 /**
@@ -696,7 +727,10 @@ export function buildSuggestions(
 ): IrisSuggestion[] {
   const trimmed = query.trim();
   const limit = options.limit ?? 8;
-  const available = MACROS.filter((macro) => macro.available(ctx));
+  const catalog = options.userMacros?.length
+    ? [...MACROS, ...options.userMacros.map(userMacroToDef)]
+    : MACROS;
+  const available = catalog.filter((macro) => macro.available(ctx));
 
   let chosen: MacroDef[];
   if (!trimmed) {

@@ -10,6 +10,8 @@ import {
 
 import Icon from "../Icon";
 import { buildSuggestions, type IrisCtx, type IrisSuggestion, type IrisPrompt } from "../../lib/iris";
+import { useMacrosStore } from "../../store/macros";
+import MacroManager from "./MacroManager";
 import {
   DEFAULT_GIT_STATUS,
   gitStatus,
@@ -66,8 +68,11 @@ export function IrisBar({ cwd }: IrisBarProps) {
   const activeTerminal = useActiveTerminal();
   const selectedPath = useEditorStore((s) => s.selectedPath);
 
+  const userMacros = useMacrosStore((s) => s.macros);
+
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [macroMgrOpen, setMacroMgrOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [running, setRunning] = useState<string | null>(null);
   const [output, setOutput] = useState<{
@@ -91,8 +96,8 @@ export function IrisBar({ cwd }: IrisBarProps) {
   );
 
   const suggestions = useMemo(
-    () => buildSuggestions(query, irisCtx),
-    [query, irisCtx],
+    () => buildSuggestions(query, irisCtx, { userMacros }),
+    [query, irisCtx, userMacros],
   );
   const safeIndex = suggestions.length
     ? Math.min(activeIndex, suggestions.length - 1)
@@ -387,6 +392,15 @@ export function IrisBar({ cwd }: IrisBarProps) {
           </span>
 
           <button
+            type="button"
+            onClick={() => setMacroMgrOpen(true)}
+            title="Manage Iris macros"
+            className="rt-btn flex shrink-0 items-center justify-center h-7 w-7"
+          >
+            <Icon name="spark" size={14} aria-label="Manage Iris macros" />
+          </button>
+
+          <button
             type="submit"
             disabled={running !== null}
             className="rt-btn-outline flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium disabled:opacity-60"
@@ -397,6 +411,8 @@ export function IrisBar({ cwd }: IrisBarProps) {
         </form>
         )} {/* end !promptState */}
       </div>
+
+      <MacroManager open={macroMgrOpen} onClose={() => setMacroMgrOpen(false)} />
     </div>
   );
 }
