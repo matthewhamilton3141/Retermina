@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "./Icon";
 import { useAppStore } from "../store/app";
 import { useWorkspaceStore } from "../store/workspace";
+import { useLoomStore } from "../store/loom";
 import { usePresetsStore } from "../store/presets";
 import { useRecentStore } from "../store/recent";
 import { useTheme } from "../theme/ThemeProvider";
@@ -72,7 +73,22 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const loadLayout    = useWorkspaceStore((s) => s.loadLayout);
   const recentEntries = useRecentStore((s) => s.entries);
   const presets       = usePresetsStore((s) => s.presets);
+  const looms         = useLoomStore((s) => s.presets);
+  const loadLoom      = useLoomStore((s) => s.loadPreset);
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
+  const setSettingsTab  = useAppStore((s) => s.setSettingsTab);
   const { themes, setTheme, themeId } = useTheme();
+
+  const SETTINGS_TABS: { id: string; label: string }[] = [
+    { id: "theme", label: "Theme" },
+    { id: "appearance", label: "Appearance" },
+    { id: "loom", label: "Loom" },
+    { id: "accessibility", label: "Accessibility" },
+    { id: "font", label: "Font" },
+    { id: "shortcuts", label: "Shortcuts" },
+    { id: "version", label: "Version" },
+  ];
+  const openSettings = (tab: string) => { setSettingsTab(tab); setSettingsOpen(true); };
 
   const visibleKinds = new Set(panels.map((p) => p.kind));
 
@@ -118,6 +134,29 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       });
     }
 
+    // Looms (full theme + layout presets)
+    for (const loom of looms) {
+      actions.push({
+        id:       `loom-${loom.id}`,
+        title:    `Apply Loom: ${loom.name}`,
+        subtitle: `${loom.workspace.panels.length} panel${loom.workspace.panels.length !== 1 ? "s" : ""}`,
+        group:    "Looms",
+        icon:     "layers",
+        onRun:    () => loadLoom(loom.id),
+      });
+    }
+
+    // Settings — open the overlay to a specific tab
+    for (const t of SETTINGS_TABS) {
+      actions.push({
+        id:       `settings-${t.id}`,
+        title:    `Settings: ${t.label}`,
+        group:    "Settings",
+        icon:     "settings",
+        onRun:    () => openSettings(t.id),
+      });
+    }
+
     // Recent workspaces
     for (const entry of recentEntries) {
       actions.push({
@@ -132,7 +171,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
     return actions;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panels, presets, recentEntries, themes, themeId]);
+  }, [panels, presets, looms, recentEntries, themes, themeId]);
 
   // ── Filter + sort ───────────────────────────────────────────────────────
 

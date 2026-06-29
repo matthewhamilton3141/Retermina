@@ -7,10 +7,11 @@
  * the persisted Zustand app store, so changes survive restarts (the store is
  * mirrored to settings.json by the persist middleware).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import Icon, { type IconName } from "./Icon";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useAppStore } from "../store/app";
 import ThemeTab from "./settings/ThemeTab";
 import AppearanceTab from "./settings/AppearanceTab";
 import LoomTab from "./settings/LoomTab";
@@ -37,7 +38,9 @@ export interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const [tab, setTab] = useState<TabId>("theme");
+  // Tab lives in the app store so the command palette can deep-link a tab.
+  const tab = useAppStore((s) => s.settingsTab) as TabId;
+  const setTab = useAppStore((s) => s.setSettingsTab);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Trap focus inside the dialog while open and restore it to the opener on

@@ -45,6 +45,8 @@ interface AppState {
   workspaceCwd: string | null;
   /** Whether the Settings modal is open (ephemeral — never persisted). */
   settingsOpen: boolean;
+  /** Which Settings tab is active (ephemeral). Lets the palette deep-link a tab. */
+  settingsTab: string;
   themeId: ThemeId;
   toolbarStyle: ToolbarStyle;
   topBarStyle: TopBarStyle;
@@ -74,6 +76,7 @@ interface AppState {
   customFonts: CustomFont[];
 
   setSettingsOpen: (open: boolean) => void;
+  setSettingsTab: (tab: string) => void;
   openTerminal: (cwd?: string | null) => void;
   goToLaunch: () => void;
   setTheme: (id: ThemeId) => void;
@@ -107,6 +110,7 @@ export const useAppStore = create<AppState>()(
       view: "launch",
       workspaceCwd: null,
       settingsOpen: false,
+      settingsTab: "theme",
       themeId: DEFAULT_THEME_ID,
       toolbarStyle: "dropdown",
       topBarStyle: "icon-only",
@@ -126,6 +130,7 @@ export const useAppStore = create<AppState>()(
       customFonts: [],
 
       setSettingsOpen: (open) => set({ settingsOpen: open }),
+      setSettingsTab: (tab) => set({ settingsTab: tab }),
       openTerminal: (cwd = null) => {
         if (cwd) {
           useRecentStore.getState().record(cwd);
