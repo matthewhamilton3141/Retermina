@@ -26,7 +26,9 @@ import {
   type WorkspaceGridItem,
   type WorkspacePanel,
 } from "./workspaceLayout";
-import type { ToolbarStyle, TopBarStyle } from "../store/app";
+import { TERMINAL_FONT_SIZE } from "./fonts";
+import { DEFAULT_CUSTOM_GRADIENT, sanitizeGradient, type CustomGradient } from "./gradient";
+import type { ToolbarStyle, TopBarStyle, MotionPreference, BackdropStyle } from "../store/app";
 
 /** Bump when the on-disk preset shape changes incompatibly. */
 export const PRESET_VERSION = 1;
@@ -42,6 +44,17 @@ export interface PresetTheme {
   toolbarStyle: ToolbarStyle;
   fontId: string;
   uiScale: number;
+  /** Terminal typeface + size. */
+  terminalFontId: string;
+  terminalFontSize: number;
+  /** Accessibility preferences. */
+  motionPreference: MotionPreference;
+  highContrast: boolean;
+  reduceTransparency: boolean;
+  terminalCursorBlink: boolean;
+  /** Workspace backdrop (incl. a user-defined gradient). */
+  backdropStyle: BackdropStyle;
+  customBackdrop: CustomGradient;
 }
 
 /** Structural half of a preset. */
@@ -78,12 +91,21 @@ export interface ReterminaPreset {
   assets?: { fonts: PresetFontAsset[] };
 }
 
-const VALID_TOOLBAR: ToolbarStyle[] = ["dropdown", "icons"];
-const VALID_TOPBAR: TopBarStyle[]   = ["icon-only", "icon-and-text"];
+const VALID_TOOLBAR: ToolbarStyle[]      = ["dropdown", "icons"];
+const VALID_TOPBAR: TopBarStyle[]        = ["icon-only", "icon-and-text"];
+const VALID_MOTION: MotionPreference[]   = ["system", "full", "reduced"];
+const VALID_BACKDROP: BackdropStyle[]    = ["solid", "gradient", "mesh", "custom"];
 
 /** Clamp the UI scale into the supported range, defaulting to 100. */
 function safeScale(value: unknown): number {
   return typeof value === "number" && value >= 80 && value <= 130 ? Math.round(value) : 100;
+}
+
+/** Clamp the terminal font size into its supported range, defaulting sanely. */
+function safeTerminalFontSize(value: unknown): number {
+  return typeof value === "number"
+    ? Math.max(TERMINAL_FONT_SIZE.min, Math.min(TERMINAL_FONT_SIZE.max, Math.round(value)))
+    : TERMINAL_FONT_SIZE.default;
 }
 
 /**
@@ -106,6 +128,18 @@ function sanitizeTheme(raw: unknown): PresetTheme {
       : "dropdown",
     fontId: typeof t.fontId === "string" ? t.fontId : "default",
     uiScale: safeScale(t.uiScale),
+    terminalFontId: typeof t.terminalFontId === "string" ? t.terminalFontId : "default",
+    terminalFontSize: safeTerminalFontSize(t.terminalFontSize),
+    motionPreference: VALID_MOTION.includes(t.motionPreference as MotionPreference)
+      ? (t.motionPreference as MotionPreference)
+      : "system",
+    highContrast: typeof t.highContrast === "boolean" ? t.highContrast : false,
+    reduceTransparency: typeof t.reduceTransparency === "boolean" ? t.reduceTransparency : false,
+    terminalCursorBlink: typeof t.terminalCursorBlink === "boolean" ? t.terminalCursorBlink : true,
+    backdropStyle: VALID_BACKDROP.includes(t.backdropStyle as BackdropStyle)
+      ? (t.backdropStyle as BackdropStyle)
+      : "solid",
+    customBackdrop: sanitizeGradient(t.customBackdrop) ?? DEFAULT_CUSTOM_GRADIENT,
   };
 }
 

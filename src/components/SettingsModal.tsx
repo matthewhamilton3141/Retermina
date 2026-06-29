@@ -13,16 +13,18 @@ import Icon, { type IconName } from "./Icon";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import ThemeTab from "./settings/ThemeTab";
 import AppearanceTab from "./settings/AppearanceTab";
+import LoomTab from "./settings/LoomTab";
 import AccessibilityTab from "./settings/AccessibilityTab";
 import FontTab from "./settings/FontTab";
 import ShortcutsTab from "./settings/ShortcutsTab";
 import VersionTab from "./settings/VersionTab";
 
-type TabId = "theme" | "appearance" | "accessibility" | "font" | "shortcuts" | "version";
+type TabId = "theme" | "appearance" | "loom" | "accessibility" | "font" | "shortcuts" | "version";
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: "theme",         label: "Theme",         icon: "palette" },
   { id: "appearance",    label: "Appearance",    icon: "layoutGrid" },
+  { id: "loom",          label: "Loom",          icon: "layers" },
   { id: "accessibility", label: "Accessibility", icon: "accessibility" },
   { id: "font",          label: "Font",          icon: "font" },
   { id: "shortcuts",     label: "Shortcuts",     icon: "keyboard" },
@@ -53,6 +55,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     switch (tab) {
       case "theme":         return <ThemeTab />;
       case "appearance":    return <AppearanceTab />;
+      case "loom":          return <LoomTab />;
       case "accessibility": return <AccessibilityTab />;
       case "font":          return <FontTab />;
       case "shortcuts":     return <ShortcutsTab />;

@@ -42,6 +42,14 @@ function captureTheme(): PresetTheme {
     toolbarStyle: a.toolbarStyle,
     fontId: a.fontId,
     uiScale: a.uiScale,
+    terminalFontId: a.terminalFontId,
+    terminalFontSize: a.terminalFontSize,
+    motionPreference: a.motionPreference,
+    highContrast: a.highContrast,
+    reduceTransparency: a.reduceTransparency,
+    terminalCursorBlink: a.terminalCursorBlink,
+    backdropStyle: a.backdropStyle,
+    customBackdrop: a.customBackdrop,
   };
 }
 
@@ -70,6 +78,14 @@ function applyPreset(preset: ReterminaPreset): void {
     toolbarStyle: safe.theme.toolbarStyle,
     fontId: safe.theme.fontId,
     uiScale: safe.theme.uiScale,
+    terminalFontId: safe.theme.terminalFontId,
+    terminalFontSize: safe.theme.terminalFontSize,
+    motionPreference: safe.theme.motionPreference,
+    highContrast: safe.theme.highContrast,
+    reduceTransparency: safe.theme.reduceTransparency,
+    terminalCursorBlink: safe.theme.terminalCursorBlink,
+    backdropStyle: safe.theme.backdropStyle,
+    customBackdrop: safe.theme.customBackdrop,
   });
 
   useWorkspaceStore.setState({
@@ -80,27 +96,33 @@ function applyPreset(preset: ReterminaPreset): void {
 }
 
 /**
- * If the preset's font is a locally-uploaded custom font, read its bytes so the
- * exported file carries the typeface with it.
+ * Bundle the bytes of any locally-uploaded fonts the preset references — both
+ * the UI font (`fontId`) and the terminal font (`terminalFontId`) — so the
+ * exported file carries the typefaces with it. Built-in fonts need no asset.
  */
 async function collectFontAssets(theme: PresetTheme): Promise<{ fonts: PresetFontAsset[] } | undefined> {
-  const custom = useAppStore.getState().customFonts.find((f) => f.id === theme.fontId);
-  if (!custom) return undefined;
-  try {
-    const data = await invoke<string>("read_font", { fileName: custom.fileName });
-    return {
-      fonts: [{
+  const { customFonts } = useAppStore.getState();
+  const ids = new Set([theme.fontId, theme.terminalFontId]);
+  const referenced = customFonts.filter((f) => ids.has(f.id));
+  if (referenced.length === 0) return undefined;
+
+  const fonts: PresetFontAsset[] = [];
+  for (const custom of referenced) {
+    try {
+      const data = await invoke<string>("read_font", { fileName: custom.fileName });
+      fonts.push({
         id: custom.id,
         name: custom.name,
         family: custom.family,
         fileName: custom.fileName,
         category: custom.category,
         data,
-      }],
-    };
-  } catch {
-    return undefined; // Font missing on disk — export without it; import falls back.
+      });
+    } catch {
+      // Font missing on disk — export without it; import falls back to default.
+    }
   }
+  return fonts.length ? { fonts } : undefined;
 }
 
 /** Save imported font assets to disk and register them for immediate use. */

@@ -2,12 +2,12 @@
 import { useState } from "react";
 
 import Icon from "../Icon";
-import LoomManager from "../LoomManager";
 import { SectionTitle, Switch } from "./primitives";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useAppStore, type CustomFont } from "../../store/app";
 import type { ThemeId } from "../../lib/theme";
 import { FONTS, THEME_FONT_CATEGORY, fontIdForCategory } from "../../lib/fonts";
+import { THEME_PREVIEW_PALETTES } from "../../lib/themePreview";
 
 /** Resolve a font id (built-in or uploaded) to its display name. */
 function fontLabel(id: string, customFonts: readonly CustomFont[]): string {
@@ -27,19 +27,10 @@ const ACCENT_PRESETS: { name: string; hex: string }[] = [
   { name: "Indigo",  hex: "#6366f1" },
 ];
 
-/**
- * Per-theme background / surface / text swatches used to paint the preview
- * cards. These are independent of the globally active theme so each card always
- * renders in its OWN palette — that is what keeps a dark card's text light
- * (and legible) even when the app is currently in a light theme, and vice versa.
- */
-const THEME_PREVIEWS: Record<string, { bg: string; surface: string; text: string }> = {
-  sleek:      { bg: "#0a0a0a", surface: "#171717", text: "#f5f5f5" },
-  pastel:     { bg: "#f6f4fb", surface: "#ffffff", text: "#4c4361" },
-  glass:      { bg: "#dde0e8", surface: "#f5f6f8", text: "#1c1e21" },
-  minimalist: { bg: "#ffffff", surface: "#fafafa", text: "#18181b" },
-  brutalism:  { bg: "#fafaf5", surface: "#ffffff", text: "#0a0a0a" },
-};
+// Per-theme preview swatches, shared with the Loom thumbnails. Each card renders
+// in its OWN engine palette regardless of the active theme, so a dark card's
+// text stays legible even while the app is in a light theme (and vice versa).
+const THEME_PREVIEWS = THEME_PREVIEW_PALETTES;
 
 interface PreviewCardProps {
   bg: string;
@@ -367,11 +358,6 @@ export default function ThemeTab() {
         </div>
       </section>
 
-      {/* Retermina Loom — preset management (save / apply / export / import) */}
-      <section>
-        <SectionTitle>Retermina Loom</SectionTitle>
-        <LoomManager />
-      </section>
     </div>
   );
 }

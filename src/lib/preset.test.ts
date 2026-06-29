@@ -52,6 +52,28 @@ describe("parsePreset — repairs partial documents", () => {
     expect(p.theme.toolbarStyle).toBe("dropdown");
   });
 
+  it("defaults the v0.2.3 terminal/accessibility/backdrop fields when absent", () => {
+    const t = parsePreset({})!.theme;
+    expect(t.terminalFontId).toBe("default");
+    expect(t.terminalFontSize).toBe(13);
+    expect(t.motionPreference).toBe("system");
+    expect(t.highContrast).toBe(false);
+    expect(t.reduceTransparency).toBe(false);
+    expect(t.terminalCursorBlink).toBe(true);
+    expect(t.backdropStyle).toBe("solid");
+    expect(t.customBackdrop.stops.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("validates/clamps the new fields and repairs a bad backdrop style", () => {
+    const t = parsePreset({ theme: {
+      terminalFontSize: 999, motionPreference: "bogus", backdropStyle: "rainbow", highContrast: true,
+    } })!.theme;
+    expect(t.terminalFontSize).toBe(24); // clamped to max
+    expect(t.motionPreference).toBe("system");
+    expect(t.backdropStyle).toBe("solid");
+    expect(t.highContrast).toBe(true);
+  });
+
   it("trims a provided name and preserves it", () => {
     expect(parsePreset({ name: "  My Loom  " })!.name).toBe("My Loom");
   });
@@ -86,6 +108,14 @@ describe("buildPreset", () => {
     toolbarStyle: "dropdown",
     fontId: "default",
     uiScale: 100,
+    terminalFontId: "default",
+    terminalFontSize: 13,
+    motionPreference: "system",
+    highContrast: false,
+    reduceTransparency: false,
+    terminalCursorBlink: true,
+    backdropStyle: "solid",
+    customBackdrop: { type: "linear", angle: 135, stops: [{ color: "#34d399", pos: 0 }, { color: "#3b82f6", pos: 100 }] },
   };
   const workspace: PresetWorkspace = { panels: [], grid: [], panelFontSizes: {} };
 
