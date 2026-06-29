@@ -75,11 +75,12 @@ export default function LoomPreview({ theme, className }: LoomPreviewProps) {
           ))}
         </div>
 
-        {/* Faux terminal body, tinted by the Loom's accent. */}
+        {/* Faux terminal body, tinted by the Loom's accent. Real-looking shell
+            output (not a made-up CLI) so the preview reads honestly. */}
         <div style={{ flex: 1, padding: "5px 6px", color: muted, overflow: "hidden" }}>
-          <div><span style={{ color: accent }}>$</span> <span style={{ color: palette.text }}>iris run dev</span></div>
-          <div>✦ ready in 312ms</div>
-          <div style={{ color: accent }}>→ localhost:1420</div>
+          <div><span style={{ color: accent }}>$</span> <span style={{ color: palette.text }}>npm run dev</span></div>
+          <div>✓ ready in 312 ms</div>
+          <div style={{ color: accent }}>➜ localhost:1420</div>
         </div>
       </div>
     </div>
