@@ -120,7 +120,7 @@ export const useAppStore = create<AppState>()(
       highContrast: false,
       reduceTransparency: false,
       terminalCursorBlink: true,
-      backdropStyle: "solid",
+      backdropStyle: "mesh",
       customBackdrop: DEFAULT_CUSTOM_GRADIENT,
       customThemes: [],
       customFonts: [],
