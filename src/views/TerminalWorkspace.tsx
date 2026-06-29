@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 
 import Icon from "../components/Icon";
 import SettingsModal from "../components/SettingsModal";
@@ -100,11 +100,47 @@ function WorkspaceTabs() {
   const setActive      = useWorkspacesStore((s) => s.setActive);
   const closeWorkspace = useWorkspacesStore((s) => s.closeWorkspace);
   const newWorkspace   = useWorkspacesStore((s) => s.newWorkspace);
+  const moveTab        = useWorkspacesStore((s) => s.moveTab);
+
+  // Drag-reorder bookkeeping + edge-fade affordance for overflowing strips.
+  const dragId = useRef<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ left: false, right: false });
+
+  const updateFade = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setFade((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }, []);
+
+  useEffect(() => { updateFade(); }, [tabs.length, updateFade]);
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(updateFade);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [updateFade]);
 
   if (tabs.length === 0) return null;
 
+  // Fade whichever edges have hidden tabs (WebKit prefix for the Tauri webview).
+  const maskStops = [
+    fade.left ? "transparent, #000 16px" : "#000",
+    fade.right ? "#000 calc(100% - 16px), transparent" : "#000",
+  ].join(", ");
+  const mask = fade.left || fade.right ? `linear-gradient(to right, ${maskStops})` : undefined;
+
   return (
-    <div className="rt-toolbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[var(--rt-border)] px-2 py-1">
+    <div
+      ref={stripRef}
+      onScroll={updateFade}
+      style={{ maskImage: mask, WebkitMaskImage: mask }}
+      className="rt-toolbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[var(--rt-border)] px-2 py-1"
+    >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         return (
@@ -112,11 +148,24 @@ function WorkspaceTabs() {
             key={tab.id}
             role="tab"
             aria-selected={active}
+            draggable
+            onDragStart={(e) => { dragId.current = tab.id; e.dataTransfer.effectAllowed = "move"; }}
+            onDragOver={(e) => { e.preventDefault(); if (dragId.current && dragId.current !== tab.id) setDragOverId(tab.id); }}
+            onDragLeave={() => setDragOverId((cur) => (cur === tab.id ? null : cur))}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragId.current && dragId.current !== tab.id) moveTab(dragId.current, tab.id);
+              dragId.current = null;
+              setDragOverId(null);
+            }}
+            onDragEnd={() => { dragId.current = null; setDragOverId(null); }}
             onMouseDown={() => setActive(tab.id)}
+            // Middle-click closes the tab, matching browser/editor convention.
+            onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeWorkspace(tab.id); } }}
             title={tab.cwd ?? "Blank Terminal"}
             className={`group/tab flex max-w-[200px] shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
               active ? "rt-btn-active" : "rt-btn-outline"
-            }`}
+            } ${dragOverId === tab.id ? "ring-1 ring-[var(--rt-accent)]" : ""}`}
           >
             <Icon name="terminal" size={12} className="shrink-0" />
             <span className="min-w-0 truncate">{tab.title}</span>

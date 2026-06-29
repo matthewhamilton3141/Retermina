@@ -9,13 +9,14 @@ import FileSearch from "./components/FileSearch";
 import ContentSearch from "./components/ContentSearch";
 import UpdateBanner from "./components/UpdateBanner";
 import Toaster from "./components/Toaster";
+import ShortcutsCheatSheet from "./components/ShortcutsCheatSheet";
 import { useAppStore } from "./store/app";
 import { useEditorStore } from "./store/editor";
 import { useSessionStore } from "./store/session";
 import { useUpdaterStore } from "./store/updater";
 import { useWorkspacesStore } from "./store/workspaces";
 import { useKeybindingsStore, buildChordMap } from "./store/keybindings";
-import { eventToChord, type CommandId } from "./lib/keybindings";
+import { eventToChord, IS_MAC, type CommandId } from "./lib/keybindings";
 
 function App() {
   const view          = useAppStore((s) => s.view);
@@ -28,6 +29,7 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
   const [contentSearchOpen, setContentSearchOpen] = useState(false);
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
 
   // ── Session reconnect — run once on mount ────────────────────────────────
   // The view (Launch Hub vs. workspace) is restored by the persisted app store,
@@ -65,6 +67,7 @@ function App() {
         case "command-palette": setPaletteOpen((v) => !v); break;
         case "file-search":     setFileSearchOpen((v) => !v); break;
         case "content-search":  setContentSearchOpen((v) => !v); break;
+        case "shortcuts-help":  setCheatSheetOpen((v) => !v); break;
         case "open-settings": {
           const s = useAppStore.getState();
           s.setSettingsOpen(!s.settingsOpen);
@@ -95,6 +98,19 @@ function App() {
     };
 
     const handler = (e: KeyboardEvent) => {
+      // ⌘1–9 / Ctrl+1–9 jump straight to a tab (9 = last). Fixed, not in the
+      // rebindable registry — conventional and would bloat the Shortcuts list.
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+      if (mod && !e.shiftKey && !e.altKey && /^Digit[1-9]$/.test(e.code)) {
+        if (useAppStore.getState().view !== "workspace") return;
+        e.preventDefault();
+        const n = Number(e.code.slice(5));
+        const { tabs, setActive } = useWorkspacesStore.getState();
+        const target = n === 9 ? tabs[tabs.length - 1] : tabs[n - 1];
+        if (target) setActive(target.id);
+        return;
+      }
+
       const chord = eventToChord(e);
       if (!chord) return;
       const id = chordMap.get(chord);
@@ -125,6 +141,7 @@ function App() {
       <ContentSearch open={contentSearchOpen} onClose={() => setContentSearchOpen(false)} cwd={workspaceCwd} />
       <UpdateBanner />
       <Toaster />
+      <ShortcutsCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
     </ThemeProvider>
   );
 }

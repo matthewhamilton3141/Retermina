@@ -57,6 +57,8 @@ interface WorkspacesState {
   newWorkspace: (cwd?: string | null) => string;
   closeWorkspace: (id: string) => void;
   setActive: (id: string) => void;
+  /** Reorder: move the tab `fromId` to the current position of `toId`. */
+  moveTab: (fromId: string, toId: string) => void;
 
   // ── Per-tab layout ops (all addressed by tab id) ──────────────────────────
   setGrid: (id: string, grid: WorkspaceGridItem[]) => void;
@@ -252,6 +254,17 @@ export const useWorkspacesStore = create<WorkspacesState>()(
         },
 
         setActive: (id) => set({ activeId: id }),
+
+        moveTab: (fromId, toId) =>
+          set((s) => {
+            const from = s.tabs.findIndex((t) => t.id === fromId);
+            const to = s.tabs.findIndex((t) => t.id === toId);
+            if (from === -1 || to === -1 || from === to) return s;
+            const tabs = [...s.tabs];
+            const [moved] = tabs.splice(from, 1);
+            tabs.splice(to, 0, moved);
+            return { tabs };
+          }),
 
         setGrid: (id, grid) => set((s) => ({ tabs: patch(s.tabs, id, (t) => ({ ...t, grid })) })),
 

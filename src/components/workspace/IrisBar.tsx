@@ -37,7 +37,9 @@ function useGitStatus(cwd: string | null) {
   const refresh = useCallback(() => {
     const id = (reqId.current += 1);
     void gitStatus(cwd).then((next) => {
-      if (id === reqId.current) setStatus(next);
+      // Degrade a missing/malformed response to "not a repo" rather than letting
+      // a null blank the whole Iris bar (and the workspace) downstream.
+      if (id === reqId.current) setStatus(next ?? DEFAULT_GIT_STATUS);
     });
   }, [cwd]);
 

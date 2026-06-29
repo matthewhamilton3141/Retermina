@@ -23,7 +23,8 @@ export type CommandId =
   | "next-tab"
   | "prev-tab"
   | "reset-layout"
-  | "back-to-launch";
+  | "back-to-launch"
+  | "shortcuts-help";
 
 export interface CommandDef {
   id: CommandId;
@@ -37,6 +38,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: "command-palette", label: "Command palette",      group: "General",   defaultBinding: "mod+k" },
   { id: "file-search",     label: "Search files",         group: "General",   defaultBinding: "mod+p" },
   { id: "content-search",  label: "Search in files",      group: "General",   defaultBinding: "mod+shift+f" },
+  { id: "shortcuts-help",  label: "Keyboard shortcuts",   group: "General",   defaultBinding: "mod+/" },
   { id: "open-settings",   label: "Open settings",        group: "General",   defaultBinding: "mod+," },
   { id: "new-tab",         label: "New workspace tab",    group: "Tabs",      defaultBinding: "mod+t" },
   { id: "close-tab",       label: "Close workspace tab",  group: "Tabs",      defaultBinding: "mod+w" },
