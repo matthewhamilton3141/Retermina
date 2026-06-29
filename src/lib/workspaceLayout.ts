@@ -19,7 +19,8 @@ export type PanelKind =
   | "codeView"
   | "claudeCode"
   | "livePreview"
-  | "gitDiff";
+  | "gitDiff"
+  | "tasks";
 
 /** Every supported panel kind, in default display order. */
 export const PANEL_KINDS: readonly PanelKind[] = [
@@ -30,6 +31,7 @@ export const PANEL_KINDS: readonly PanelKind[] = [
   "claudeCode",
   "livePreview",
   "gitDiff",
+  "tasks",
 ];
 
 /** A visible panel instance. `id` doubles as the grid item key. */
@@ -94,6 +96,7 @@ export const PANEL_IDS: Record<PanelKind, string> = {
   claudeCode: "claude-code",
   livePreview: "live-preview",
   gitDiff: "git-diff",
+  tasks: "tasks",
 };
 
 /** Icon + label for each panel kind. Single source of truth for chrome text. */
@@ -105,6 +108,7 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
   claudeCode: { icon: "claudeLogo", label: "Claude Code" },
   livePreview: { icon: "preview", label: "Preview" },
   gitDiff: { icon: "gitDiff", label: "Changes" },
+  tasks: { icon: "launch", label: "Tasks" },
 };
 
 /**
@@ -140,6 +144,7 @@ export const DEFAULT_PANEL_SIZE: Record<
   claudeCode:  { w: 4, h: 5, minW: 3, minH: 2 },  // right column, half-height
   livePreview: { w: 5, h: 6, minW: 3, minH: 3 },  // centre column
   gitDiff:     { w: 5, h: 8, minW: 3, minH: 3 },  // centre column
+  tasks:       { w: 3, h: 5, minW: 2, minH: 2 },  // left column
 };
 
 const DEFAULT_VISIBLE_PANEL_KINDS: readonly PanelKind[] = [
@@ -196,6 +201,7 @@ export const PANEL_COLUMN: Record<PanelKind, { x: number; w: number }> = {
   gitDiff:      { x: 3, w: 5 },
   terminal:     { x: 8, w: 4 },
   claudeCode:   { x: 8, w: 4 },
+  tasks:        { x: 0, w: 3 },
 };
 
 /**

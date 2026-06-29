@@ -11,6 +11,7 @@ import type { PanelKind } from "../../lib/workspaceLayout";
 import DiffViewer from "./DiffViewer";
 import FileExplorerPanel from "./FileExplorerPanel";
 import GitDiffPanel from "./GitDiffPanel";
+import TasksPanel from "./TasksPanel";
 import LivePreviewPanel from "./LivePreviewPanel";
 import LocalhostPanel from "./LocalhostPanel";
 import { SplitTerminalPanel } from "./SplitTerminalPanel";
@@ -397,4 +398,5 @@ export const PANEL_RENDERERS: Record<
   claudeCode: ({ cwd }) => <ClaudeCodePanel cwd={cwd} />,
   livePreview: () => <LivePreviewPanel />,
   gitDiff: ({ cwd }) => <GitDiffPanel cwd={cwd} />,
+  tasks: ({ cwd }) => <TasksPanel cwd={cwd} />,
 };
