@@ -738,6 +738,17 @@ body {
 }
 
 /*
+ * Safe Edit textarea. Its own glyphs are transparent so the highlighted <pre>
+ * layered directly behind it provides the colour; only the caret and selection
+ * are painted. Metrics (font, size, line-height, padding, whitespace) must match
+ * that <pre> exactly or the two layers drift apart.
+ */
+.rt-code-editor {
+  color: transparent;
+  caret-color: var(--rt-text);
+}
+
+/*
  * Prism syntax tokens (Code panel read-only view).
  *
  * Colours are driven by the per-engine `--rt-syn-*` tokens so highlighting

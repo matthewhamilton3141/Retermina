@@ -364,6 +364,14 @@ export function IrisBar({ cwd }: IrisBarProps) {
               <span className="max-w-[9rem] truncate font-medium">
                 {status.branch ?? "detached"}
               </span>
+              {status.commit ? (
+                <span
+                  className="rt-text-faint font-mono tabular-nums"
+                  title="HEAD commit"
+                >
+                  @{status.commit}
+                </span>
+              ) : null}
               {status.ahead > 0 ? (
                 <span className="flex items-center gap-0.5 tabular-nums">
                   <Icon name="push" size={10} />

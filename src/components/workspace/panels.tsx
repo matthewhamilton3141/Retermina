@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import Icon from "../Icon";
 import { highlightCode } from "../../lib/highlight";
@@ -96,6 +96,92 @@ function CodeViewPanel() {
     clearReveal();
   }, [revealLine, content, diffMode, isEditing, clearReveal]);
 
+  // ── Edit mode: syntax-highlighted overlay + find/replace ──────────────────
+  // The textarea's text is transparent (see `.rt-code-editor`); the highlighted
+  // <pre> behind it provides the colour. They share font metrics + padding and
+  // scroll in lockstep so glyphs line up exactly.
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editPreRef = useRef<HTMLPreElement | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [replaceQuery, setReplaceQuery] = useState("");
+  const [activeMatch, setActiveMatch] = useState(0);
+
+  const syncOverlayScroll = useCallback(() => {
+    const ta = editTextareaRef.current;
+    if (ta && editPreRef.current) {
+      editPreRef.current.scrollTop = ta.scrollTop;
+      editPreRef.current.scrollLeft = ta.scrollLeft;
+    }
+  }, []);
+
+  // Case-insensitive literal match offsets within the current draft.
+  const matches = useMemo(() => {
+    if (!isEditing || !findQuery) return [];
+    const hay = (editDraft ?? "").toLowerCase();
+    const needle = findQuery.toLowerCase();
+    const out: number[] = [];
+    for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + needle.length)) {
+      out.push(i);
+    }
+    return out;
+  }, [isEditing, findQuery, editDraft]);
+
+  // Keep the active index in range as matches change (typing, replacing).
+  useEffect(() => {
+    if (activeMatch !== 0 && activeMatch >= matches.length) setActiveMatch(0);
+  }, [matches.length, activeMatch]);
+
+  // Reset the find UI whenever we leave edit mode or switch files.
+  useEffect(() => {
+    if (!isEditing) {
+      setFindOpen(false);
+      setFindQuery("");
+      setReplaceQuery("");
+      setActiveMatch(0);
+    }
+  }, [isEditing, selectedPath]);
+
+  const selectMatch = useCallback(
+    (idx: number) => {
+      const ta = editTextareaRef.current;
+      if (!ta || matches.length === 0) return;
+      const i = ((idx % matches.length) + matches.length) % matches.length;
+      const start = matches[i];
+      ta.focus();
+      ta.setSelectionRange(start, start + findQuery.length);
+      requestAnimationFrame(syncOverlayScroll);
+      setActiveMatch(i);
+    },
+    [matches, findQuery, syncOverlayScroll],
+  );
+
+  const replaceCurrent = useCallback(() => {
+    if (matches.length === 0) return;
+    const i = ((activeMatch % matches.length) + matches.length) % matches.length;
+    const start = matches[i];
+    const draft = editDraft ?? "";
+    setDraft(draft.slice(0, start) + replaceQuery + draft.slice(start + findQuery.length));
+  }, [matches, activeMatch, editDraft, findQuery, replaceQuery, setDraft]);
+
+  const replaceAll = useCallback(() => {
+    if (!findQuery) return;
+    const escaped = findQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    setDraft((editDraft ?? "").replace(new RegExp(escaped, "gi"), replaceQuery));
+  }, [findQuery, replaceQuery, editDraft, setDraft]);
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    editTextareaRef.current?.focus();
+  }, []);
+
+  const onEditorKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      setFindOpen(true);
+    }
+  }, []);
+
   return (
     <div className="rt-subsurface flex h-full w-full flex-col">
       {/* Header bar */}
@@ -135,6 +221,14 @@ function CodeViewPanel() {
         )}
         {canEdit && isEditing && (
           <>
+            <button
+              type="button"
+              onClick={() => setFindOpen((v) => !v)}
+              title="Find & replace (⌘F)"
+              className={`rt-btn flex h-6 w-6 shrink-0 items-center justify-center ${findOpen ? "rt-btn-active" : ""}`}
+            >
+              <Icon name="search" size={12} aria-label="Find and replace" />
+            </button>
             <button
               type="button"
               onClick={cancelEditing}
@@ -183,14 +277,110 @@ function CodeViewPanel() {
 
       {/* Body */}
       {isEditing ? (
-        /* ── Edit mode ── */
-        <textarea
-          value={editDraft ?? ""}
-          onChange={(e) => setDraft(e.target.value)}
-          spellCheck={false}
-          className="min-h-0 flex-1 resize-none bg-transparent p-3 font-mono text-[12px] leading-relaxed outline-none ring-1 ring-inset ring-[var(--rt-accent)]"
-          style={{ colorScheme: "inherit" }}
-        />
+        /* ── Edit mode: find/replace bar + syntax-highlighted overlay ── */
+        <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onEditorKeyDown}>
+          {findOpen && (
+            <div className="rt-divider-b flex shrink-0 flex-wrap items-center gap-1.5 px-2.5 py-1.5">
+              <input
+                autoFocus
+                value={findQuery}
+                onChange={(e) => setFindQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectMatch(activeMatch + (e.shiftKey ? -1 : 1));
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeFind();
+                  }
+                }}
+                placeholder="Find"
+                spellCheck={false}
+                className="rt-input w-36 px-2 py-1 text-[12px]"
+              />
+              <input
+                value={replaceQuery}
+                onChange={(e) => setReplaceQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeFind();
+                  }
+                }}
+                placeholder="Replace"
+                spellCheck={false}
+                className="rt-input w-36 px-2 py-1 text-[12px]"
+              />
+              <span className="rt-text-faint min-w-[3rem] text-center text-[11px] tabular-nums">
+                {matches.length ? `${activeMatch + 1}/${matches.length}` : findQuery ? "0/0" : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => selectMatch(activeMatch - 1)}
+                disabled={!matches.length}
+                title="Previous match (⇧↵)"
+                className="rt-btn flex h-6 w-6 items-center justify-center disabled:opacity-40"
+              >
+                <Icon name="chevronDown" size={12} className="rotate-180" aria-label="Previous match" />
+              </button>
+              <button
+                type="button"
+                onClick={() => selectMatch(activeMatch + 1)}
+                disabled={!matches.length}
+                title="Next match (↵)"
+                className="rt-btn flex h-6 w-6 items-center justify-center disabled:opacity-40"
+              >
+                <Icon name="chevronDown" size={12} aria-label="Next match" />
+              </button>
+              <button
+                type="button"
+                onClick={replaceCurrent}
+                disabled={!matches.length}
+                title="Replace this match"
+                className="rt-btn-outline px-2 py-0.5 text-[11px] font-medium disabled:opacity-40"
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={replaceAll}
+                disabled={!matches.length}
+                title="Replace all matches"
+                className="rt-btn-outline px-2 py-0.5 text-[11px] font-medium disabled:opacity-40"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={closeFind}
+                title="Close (Esc)"
+                className="rt-btn ml-auto flex h-6 w-6 items-center justify-center"
+              >
+                <Icon name="close" size={11} aria-label="Close find" />
+              </button>
+            </div>
+          )}
+          <div className="relative min-h-0 flex-1 overflow-hidden ring-1 ring-inset ring-[var(--rt-accent)]">
+            <pre
+              ref={editPreRef}
+              aria-hidden
+              className="rt-code pointer-events-none absolute inset-0 m-0 overflow-auto p-3 font-mono text-[12px] leading-relaxed whitespace-pre"
+            >
+              {highlightCode(editDraft ?? "", fileName ?? "")}
+              {"\n"}
+            </pre>
+            <textarea
+              ref={editTextareaRef}
+              value={editDraft ?? ""}
+              onChange={(e) => setDraft(e.target.value)}
+              onScroll={syncOverlayScroll}
+              spellCheck={false}
+              wrap="off"
+              className="rt-code-editor absolute inset-0 resize-none overflow-auto whitespace-pre bg-transparent p-3 font-mono text-[12px] leading-relaxed outline-none"
+              style={{ colorScheme: "inherit" }}
+            />
+          </div>
+        </div>
       ) : diffMode && selectedPath && !loading && !error ? (
         /* ── Diff mode ── */
         <DiffViewer />
