@@ -184,6 +184,12 @@ interface LoomState {
   exportPreset: (id: string) => Promise<string | null>;
   /** Pick a `.json` Loom, validate, install assets, add it, and apply it. */
   importPreset: () => Promise<ReterminaPreset | null>;
+  /**
+   * Validate an already-parsed Loom document (e.g. fetched from the gallery),
+   * install its fonts, add it to the library, and apply it. Shared by file
+   * import and the marketplace.
+   */
+  installPreset: (raw: unknown) => Promise<ReterminaPreset | null>;
 }
 
 export const useLoomStore = create<LoomState>()(
@@ -243,9 +249,12 @@ export const useLoomStore = create<LoomState>()(
         } catch {
           throw new Error("That file isn't valid JSON.");
         }
+        return get().installPreset(parsed);
+      },
 
-        const preset = parsePreset(parsed);
-        if (!preset) throw new Error("That file isn't a Retermina Loom preset.");
+      installPreset: async (raw) => {
+        const preset = parsePreset(raw);
+        if (!preset) throw new Error("That isn't a Retermina Loom preset.");
 
         // Bring any bundled fonts in first so the theme resolves on apply.
         await installFontAssets(preset.assets);

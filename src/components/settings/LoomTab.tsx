@@ -4,12 +4,15 @@
  * apply / export / delete / import them.
  */
 import { useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import Icon from "../Icon";
 import LoomPreview from "../LoomPreview";
+import BrowseLooms from "../BrowseLooms";
 import { SectionTitle } from "./primitives";
 import { useLoomStore } from "../../store/loom";
 import { resolveTheme } from "../../lib/theme";
+import { shareUrl } from "../../lib/marketplace";
 
 /** Relative-age label for a preset's creation timestamp. */
 function formatAge(ts: number): string {
@@ -37,6 +40,9 @@ export default function LoomTab() {
   const [name, setName]     = useState("");
   const [busy, setBusy]     = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [browsing, setBrowsing] = useState(false);
+
+  if (browsing) return <BrowseLooms onBack={() => setBrowsing(false)} />;
 
   const save = () => {
     if (!name.trim()) return;
@@ -73,6 +79,15 @@ export default function LoomTab() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Community gallery entry */}
+      <button
+        type="button"
+        onClick={() => setBrowsing(true)}
+        className="rt-btn-outline rt-btn-active flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-medium"
+      >
+        <Icon name="marketplace" size={15} /> Browse community Looms
+      </button>
+
       {/* Save current setup */}
       <section>
         <SectionTitle>Save current setup</SectionTitle>
@@ -131,6 +146,14 @@ export default function LoomTab() {
                       title="Apply this Loom"
                     >
                       Apply
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void openUrl(shareUrl(p))}
+                      title="Share to the community gallery"
+                      className="rt-btn flex h-7 w-7 shrink-0 items-center justify-center"
+                    >
+                      <Icon name="popOut" size={13} aria-label="Share to gallery" />
                     </button>
                     <button
                       type="button"
