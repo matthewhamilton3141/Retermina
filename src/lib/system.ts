@@ -71,6 +71,7 @@ export function runBackgroundCommand(
 export interface GitStatus {
   isRepo: boolean;
   branch: string | null;
+  commit: string | null;
   hasUpstream: boolean;
   ahead: number;
   behind: number;
@@ -85,6 +86,7 @@ export interface GitStatus {
 export const DEFAULT_GIT_STATUS: GitStatus = {
   isRepo: false,
   branch: null,
+  commit: null,
   hasUpstream: false,
   ahead: 0,
   behind: 0,

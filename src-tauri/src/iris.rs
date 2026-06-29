@@ -25,6 +25,8 @@ pub struct GitStatus {
     pub is_repo: bool,
     /// Current branch name; `None` when detached or unknown.
     pub branch: Option<String>,
+    /// Short HEAD commit hash (7 chars); `None` before the first commit.
+    pub commit: Option<String>,
     /// Whether the branch has a configured upstream (affects push vs publish).
     pub has_upstream: bool,
     /// Commits ahead of upstream.
@@ -93,6 +95,7 @@ fn shell_command(script: &str) -> Command {
 /// repo); `is_repo` is therefore set to `true`.
 ///
 /// Relevant lines (porcelain v2):
+/// - `# branch.oid <sha>` — HEAD commit (`(initial)` before the first commit)
 /// - `# branch.head <name>` — current branch (`(detached)` when headless)
 /// - `# branch.upstream <name>` — present only when an upstream is set
 /// - `# branch.ab +<ahead> -<behind>` — divergence from upstream
@@ -106,7 +109,15 @@ fn parse_git_status(output: &str) -> GitStatus {
     };
 
     for line in output.lines() {
-        if let Some(name) = line.strip_prefix("# branch.head ") {
+        if let Some(oid) = line.strip_prefix("# branch.oid ") {
+            let oid = oid.trim();
+            // `(initial)` appears before the first commit exists.
+            status.commit = if oid == "(initial)" {
+                None
+            } else {
+                Some(oid.chars().take(7).collect())
+            };
+        } else if let Some(name) = line.strip_prefix("# branch.head ") {
             let name = name.trim();
             status.branch = if name == "(detached)" {
                 None
@@ -214,6 +225,7 @@ mod tests {
         let status = parse_git_status(output);
         assert!(status.is_repo);
         assert_eq!(status.branch.as_deref(), Some("feature/iris"));
+        assert_eq!(status.commit.as_deref(), Some("abc123"));
         assert!(status.has_upstream);
         assert_eq!(status.ahead, 2);
         assert_eq!(status.behind, 1);
@@ -250,6 +262,15 @@ u UU N... 100644 100644 100644 100644 aaa bbb ccc conflict.rs
         assert!(status.branch.is_none());
         assert_eq!(status.conflicts, 1);
         assert!(!status.clean);
+    }
+
+    #[test]
+    fn truncates_commit_to_seven_chars_and_handles_initial() {
+        let full = parse_git_status("# branch.oid 0123456789abcdef\n# branch.head main\n");
+        assert_eq!(full.commit.as_deref(), Some("0123456"));
+
+        let initial = parse_git_status("# branch.oid (initial)\n# branch.head main\n");
+        assert_eq!(initial.commit, None);
     }
 
     #[test]

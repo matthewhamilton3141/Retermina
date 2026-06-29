@@ -6,6 +6,7 @@ function ctx(overrides: Partial<IrisCtx> = {}): IrisCtx {
   return {
     isRepo: true,
     branch: "main",
+    commit: null,
     hasUpstream: true,
     ahead: 0,
     behind: 0,
