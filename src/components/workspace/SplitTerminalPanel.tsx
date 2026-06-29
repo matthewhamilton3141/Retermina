@@ -96,6 +96,19 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
   const [panes, setPanes] = useState<Pane[]>([{ id: uid(), size: 100 }]);
   const [direction, setDirection] = useState<Direction>("h");
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Broadcast: when on, input typed in any pane is mirrored to all the others.
+  const [broadcast, setBroadcast] = useState(false);
+  const broadcastRef = useRef(broadcast);
+  broadcastRef.current = broadcast;
+  // Each pane's live PTY write fn, keyed by pane id.
+  const writesRef = useRef<Map<string, (d: string) => void>>(new Map());
+  const handlePaneInput = useCallback((paneId: string, data: string) => {
+    if (!broadcastRef.current) return;
+    writesRef.current.forEach((write, id) => {
+      if (id !== paneId) write(data);
+    });
+  }, []);
   // Live pointer-drag state for a pane being dragged out of the split.
   const [popout, setPopout] = useState<{ paneId: string; x: number; y: number; outside: boolean } | null>(null);
 
@@ -238,6 +251,18 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
         {multi && (
           <button
             type="button"
+            onClick={() => setBroadcast((v) => !v)}
+            title="Broadcast input to all panes"
+            aria-pressed={broadcast}
+            className={`rt-btn-outline flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium ${broadcast ? "rt-btn-active" : ""}`}
+          >
+            <Icon name="iris" size={11} />
+            <span>All</span>
+          </button>
+        )}
+        {multi && (
+          <button
+            type="button"
             onClick={() => setPanes([{ id: uid(), size: 100 }])}
             title="Merge all panes back into one"
             className="rt-btn-outline px-1.5 py-0.5 text-[10px] font-medium"
@@ -278,7 +303,16 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
                   </button>
                 </div>
               )}
-              <TerminalViewport cwd={cwd} active={active} className="h-full w-full" />
+              <TerminalViewport
+                cwd={cwd}
+                active={active}
+                className="h-full w-full"
+                onInput={(data) => handlePaneInput(pane.id, data)}
+                registerWrite={(write) => {
+                  if (write) writesRef.current.set(pane.id, write);
+                  else writesRef.current.delete(pane.id);
+                }}
+              />
             </div>
 
             {idx < panes.length - 1 && (

@@ -63,6 +63,16 @@ export interface TerminalViewportProps {
    * user is actually looking at rather than whichever tab connected last.
    */
   active?: boolean;
+  /**
+   * Called with every chunk the user types into this terminal — used by the
+   * split panel's "broadcast" mode to mirror input across panes.
+   */
+  onInput?: (data: string) => void;
+  /**
+   * Receives this viewport's PTY write function once connected (and `null` on
+   * teardown), so a parent can write directly into this specific terminal.
+   */
+  registerWrite?: (write: ((data: string) => void) | null) => void;
 }
 
 /**
@@ -85,6 +95,8 @@ export function TerminalViewport({
   initialCommand,
   registerWithBus = true,
   active = true,
+  onInput,
+  registerWrite,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Re-claims the Iris bus for this terminal; populated once the PTY connects.
@@ -92,6 +104,11 @@ export function TerminalViewport({
   // Keep the latest onExit without re-running the (heavy) PTY effect.
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  // Same pattern for broadcast hooks — the PTY effect runs once per cwd.
+  const onInputRef = useRef(onInput);
+  onInputRef.current = onInput;
+  const registerWriteRef = useRef(registerWrite);
+  registerWriteRef.current = registerWrite;
 
   // Write function populated once the PTY session is established.
   // Used by the file-drop handler to paste paths without going through the
@@ -225,6 +242,8 @@ export function TerminalViewport({
       } else {
         pendingInput.push(data); // buffer until the session connects
       }
+      // Mirror to broadcast listeners (split panel) regardless of connect state.
+      onInputRef.current?.(data);
     });
 
     const handleEvent = (event: PtyEvent) => {
@@ -264,6 +283,8 @@ export function TerminalViewport({
         if (command) void writeToPty(id, `${command}\r`);
         // Populate the drop-handler write ref for this specific PTY.
         ptyWriteRef.current = (data) => void writeToPty(id, data);
+        // Hand the write fn to a parent (split panel broadcast) too.
+        registerWriteRef.current?.((data) => void writeToPty(id, data));
 
         if (registerWithBus) {
           // Expose this session to Iris so it can run commands here. Registered
@@ -310,6 +331,7 @@ export function TerminalViewport({
       ptyWriteRef.current = null;
       registerBusRef.current = null;
       refitRef.current = null;
+      registerWriteRef.current?.(null);
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
       resultsSub.dispose();
