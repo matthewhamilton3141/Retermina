@@ -83,9 +83,7 @@ export default function BrowseLooms({ onBack }: { onBack: () => void }) {
             <div key={c.preset.id} className="rt-card flex flex-col overflow-hidden">
               <LoomPreview
                 theme={c.preset.theme}
-                panels={c.preset.workspace.panels}
-                grid={c.preset.workspace.grid}
-                className="aspect-[12/10] w-full border-b border-[var(--rt-border)]"
+                className="aspect-[16/10] w-full border-b border-[var(--rt-border)]"
               />
               <div className="flex flex-col gap-2 p-2.5">
                 <div className="min-w-0">

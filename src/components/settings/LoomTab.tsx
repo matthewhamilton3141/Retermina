@@ -125,9 +125,7 @@ export default function LoomTab() {
               <div key={p.id} className="rt-card flex flex-col overflow-hidden">
                 <LoomPreview
                   theme={p.theme}
-                  panels={p.workspace.panels}
-                  grid={p.workspace.grid}
-                  className="aspect-[12/10] w-full border-b border-[var(--rt-border)]"
+                  className="aspect-[16/10] w-full border-b border-[var(--rt-border)]"
                 />
                 <div className="flex flex-col gap-2 p-2.5">
                   <div className="min-w-0">
