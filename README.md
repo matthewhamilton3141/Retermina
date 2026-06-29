@@ -65,6 +65,18 @@ Seven panel types can be independently toggled, dragged, resized, and arranged a
 
 Panels snap to the grid, resize from all eight edges, and resolve collisions without flying off-screen.
 
+#### Workspace tabs
+
+Open several workspaces at once — each tab keeps its own folder, panel layout, and **live terminals**. Every tab stays mounted (inactive ones are hidden with `visibility`, not unmounted), so a backgrounded tab's PTYs keep running and its grid stays correctly sized. Tabs can be **dragged to reorder** and **middle-clicked to close**, the strip fades at the edges when it overflows, and `⌘T` / `⌘W` / `⌘1–9` / `⌘⇧[` `⌘⇧]` drive them from the keyboard.
+
+#### Panel focus mode
+
+Double-click any panel's header (or its maximize button) to blow that panel up to fill the whole grid; **Esc** or the restore button drops it back. All panels stay mounted underneath, so live shells survive — it's purely a CSS overlay over the same grid, not a remount.
+
+#### Undo & toasts
+
+Destructive grid actions surface a corner toast with **Undo** — resetting a layout or closing a tab can be reverted in one click before the toast dismisses.
+
 #### Terminal search & clickable links
 
 Each terminal loads xterm's **search** and **web-links** addons. **Cmd/Ctrl+F** opens an in-panel find bar with next/previous navigation (Enter / Shift+Enter), a live match counter, and incremental highlighting as you type; **Esc** dismisses it. URLs in terminal output are clickable and open in the OS default browser through the Tauri opener plugin (not xterm's default `window.open`, which the webview blocks). Both apply to every terminal — split panes and the Claude Code panel included.
@@ -187,28 +199,35 @@ Selection (and other content drawn _on_ the accent — checkmarks, radio dots, t
 
 ### Customization & the Settings overlay
 
-A centred, frosted-glass **Settings overlay** centralizes all customization behind one gear button (available from both the Launch Hub and the workspace toolbar). It is organized into four tabs, and every change is written straight to the persisted Zustand store (mirrored to `settings.json`), so it survives restarts:
+A centred, frosted-glass **Settings overlay** centralizes all customization behind one gear button (available from both the Launch Hub and the workspace toolbar). It is organized into seven tabs — **Theme**, **Appearance**, **Loom**, **Accessibility**, **Font**, **Shortcuts**, and **Version** — and every change is written straight to the persisted Zustand store (mirrored to `settings.json`), so it survives restarts:
 
-- **Theme / Retermina Loom** — visual preview cards for the five engines, an accent-colour picker (presets + custom hex/colour input), "Save as preset", and a one-click revert to the engine's brand accent. Preview cards paint in their own palette, so a dark card keeps light text (and vice-versa) regardless of the active theme. A **Font pairing** control suggests (and optionally auto-applies) the font categorized for the active theme, and the **Retermina Loom** preset manager lives here (see below).
-- **Appearance** — top-bar style (icons only vs. icons + labels), panel-toggle style (dropdown vs. icon strip), and a global **workspace text scale** slider (80–130 %) that drives the root `font-size` so every rem-based element scales together.
-- **Font** — fonts are grouped by thematic category. Pick from the bundled typefaces (Inter, Space Grotesk, Nunito, JetBrains Mono) or **upload your own** `.ttf`/`.otf`. Uploaded files are copied by Rust into `<data_dir>/Retermina/fonts`, registered at runtime with the `FontFace` Web API (bytes flow through Rust as base64, so no `asset://` scope is needed), and assigned to a category that drives theme pairing.
+- **Theme** — visual preview cards for the five engines, an accent-colour picker (presets + custom hex/colour input), "Save as preset", and a one-click revert to the engine's brand accent. Preview cards paint in their own palette, so a dark card keeps light text (and vice-versa) regardless of the active theme. A **Font pairing** control suggests (and optionally auto-applies) the font categorized for the active theme.
+- **Appearance** — top-bar style (icons only vs. icons + labels), panel-toggle style (dropdown vs. icon strip), a global **workspace text scale** slider (80–130 %) that drives the root `font-size`, and a **workspace backdrop** selector: Solid, an accent-tinted **Gradient**, a **Mesh** of accent blobs, or a fully **Custom** gradient built in an in-app editor (linear/radial, angle, add/remove colour stops, live preview) — layered over whichever engine is active.
+- **Loom** — the preset library (see [Retermina Loom](#retermina-loom--portable-preset-system)): a grid of live-rendered preview tiles with apply / export / delete / import, and **Browse community Looms** (the gallery).
+- **Accessibility** — a **Motion** policy (follow the OS "Reduce Motion" setting, force motion on, or force reduced — honoured in CSS *and* the window animations), plus **Increase contrast** (stronger borders + text on every engine), **Reduce transparency** (drop the frosted blur), and a **terminal cursor blink** toggle.
+- **Font** — a dedicated **Terminal** typeface + size control (a monospace picker plus a size that applies live to every terminal, independent of the UI font) and the UI-font picker: bundled typefaces (Inter, Space Grotesk, Nunito, JetBrains Mono) or **upload your own** `.ttf`/`.otf`, grouped by thematic category. Uploaded files are copied by Rust into `<data_dir>/Retermina/fonts` and registered at runtime with the `FontFace` Web API (bytes flow through Rust as base64, so no `asset://` scope is needed).
+- **Shortcuts** — every global command's keybinding, **fully rebindable**: click a shortcut, press a new chord, done. Bindings are kept unique (assigning one already in use clears it from the other command), and **⌘/** opens a read-only cheat-sheet of the full list. Defaults cover the command palette (⌘K), file (⌘P) and content (⌘⇧F) search, new / close / next / previous tab, and opening settings — and **⌘1–9** jump straight to a tab.
 - **Version** — shows the current app version and a **Check for Updates** button that drives the `@tauri-apps/plugin-updater` flow (download with progress → relaunch via `@tauri-apps/plugin-process`). Retermina also checks for updates **on launch** (silently — a failed/unreachable endpoint is a no-op) and surfaces an available update through a dismissible banner; the manual button and the banner share one updater store, and a dismissal is remembered per version so the same update won't nag again.
 
 ### Retermina Loom — portable preset system
 
 A **Loom** is a single JSON document that bundles a complete app configuration — both halves of the experience:
 
-- **Cosmetic** — theme engine, accent colour, top-bar/toolbar style, font, and global text scale.
+- **Cosmetic** — theme engine, accent colour, top-bar/toolbar style, the UI **and terminal** fonts (+ terminal size), global text scale, the **workspace backdrop** (including a custom gradient), and the **accessibility** preferences (motion, contrast, transparency, cursor blink).
 - **Structural** — the full react-grid-layout topology (coordinates + sizes), the panels it hosts, and per-panel text-zoom overrides.
 
-The **Manage Presets** panel (in the Theme / Retermina Loom tab) lets you name and **Save Current Layout**, **Apply** any saved Loom (the theme re-skins and the grid re-mounts in real time), **Delete**, and **Export** / **Import from Loom**:
+The dedicated **Loom** tab renders your saved Looms as a grid of **live preview tiles** (each drawn from the Loom's own theme — no screenshots) and lets you name and **Save** the current setup, **Apply** any saved Loom (the theme re-skins and the grid re-mounts in real time), **Delete**, **Export** / **Import from Loom**, and **Share** to the community gallery:
 
 - **Persistence** — the library is stored as `presets.json` under the app data directory via the Rust `read_presets` / `write_presets` commands (a Tauri-file-backed Zustand storage), independent of localStorage.
 - **Export / Import** — uses Tauri's `dialog.save` / `dialog.open` plugin to write/read a shareable `.json` file. An exported Loom can embed the bytes of a referenced custom font, so on import the typeface is reinstalled automatically and the preset's font resolves on another machine.
 - **Graceful fallback** — every load runs through a schema validator (`parsePreset`); corrupt or partial layout data degrades to the default grid instead of crashing the window.
-- **Privacy** — a Loom captures _only_ layout geometry + panel identity and cosmetic settings. It never serializes live-session state: no PTY/terminal buffers, no working directory, no open-file paths or contents. Presets stay local (`presets.json` or a file you choose) — nothing is uploaded anywhere.
+- **Privacy** — a Loom captures _only_ layout geometry + panel identity and cosmetic settings. It never serializes live-session state: no PTY/terminal buffers, no working directory, no open-file paths or contents. Presets stay local by default; nothing is ever uploaded automatically or in the background — sharing to the community gallery is **explicit and opt-in** (see below).
 
 > A separate, lightweight **Presets** menu in the toolbar persists layout-only snapshots (no theme) to localStorage for quick in-session switching; it coexists with Looms.
+
+#### Community gallery
+
+**Browse community Looms** (Settings → Loom → Browse) fetches a published `catalog.json` and renders each shared Loom as a live preview tile; **Install** fetches it, runs it through the same `parsePreset` validator, and applies it. **Sharing is explicit**: the **Share** action opens a pre-filled GitHub issue in the [`retermina-looms`](https://github.com/matthewhamilton3141/retermina-looms) repo — an automated check validates the Loom (strict schema: hex-only colours, enum/range checks, no bundled font binaries) and opens a pull request, and a maintainer merge publishes it. That human merge is the moderation gate, so nothing reaches the gallery unreviewed. The website's gallery reads the **same catalog**, so the app and the site always show the identical set.
 
 ### Live file diff viewer
 
@@ -260,13 +279,13 @@ On launch Retermina reconnects to where you left off: the last workspace folder,
 
 `decorations: false` + `transparent: true` + `macOSPrivateApi: true` gives Retermina full control of the window chrome. A custom title bar renders macOS traffic light buttons and handles window dragging via an explicit `onMouseDown → appWindow.startDragging()` call — not `data-tauri-drag-region`, which would intercept mid-panel-drag mousemove events and break the grid.
 
-**Double-click to maximize** is animated rather than an instant snap: instead of the OS's immediate toggle, the title bar tweens the window's outer bounds (with `requestAnimationFrame` + an `easeOutCubic` curve) between the restored rect and the monitor's `workArea` — so maximize/restore eases smoothly and still respects the dock/menu bar. It honours `prefers-reduced-motion` (instant jump) and falls back to the native toggle if the monitor can't be resolved.
+**Double-click to maximize** is animated rather than an instant snap: instead of the OS's immediate toggle, the title bar tweens the window's outer bounds (with `requestAnimationFrame` + an `easeOutCubic` curve) between the restored rect and the monitor's `workArea` — so maximize/restore eases smoothly and still respects the dock/menu bar. It honours the **Accessibility → Motion** preference — which follows or overrides the OS `prefers-reduced-motion` setting — with an instant jump when motion is reduced, and falls back to the native toggle if the monitor can't be resolved.
 
 ---
 
 ## Download
 
-**macOS (Apple Silicon):** [Download Retermina](https://github.com/matthewhamilton3141/Retermina/releases/latest/download/Retermina-macos.dmg)
+**macOS (universal — Apple Silicon + Intel):** grab the latest `.dmg` from the [**releases page**](https://github.com/matthewhamilton3141/Retermina/releases/latest).
 
 After downloading, drag Retermina to your Applications folder, then run this once in Terminal:
 
