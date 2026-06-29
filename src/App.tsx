@@ -8,6 +8,7 @@ import CommandPalette from "./components/CommandPalette";
 import FileSearch from "./components/FileSearch";
 import ContentSearch from "./components/ContentSearch";
 import UpdateBanner from "./components/UpdateBanner";
+import Toaster from "./components/Toaster";
 import { useAppStore } from "./store/app";
 import { useEditorStore } from "./store/editor";
 import { useSessionStore } from "./store/session";
@@ -123,6 +124,7 @@ function App() {
       <FileSearch open={fileSearchOpen} onClose={() => setFileSearchOpen(false)} cwd={workspaceCwd} />
       <ContentSearch open={contentSearchOpen} onClose={() => setContentSearchOpen(false)} cwd={workspaceCwd} />
       <UpdateBanner />
+      <Toaster />
     </ThemeProvider>
   );
 }

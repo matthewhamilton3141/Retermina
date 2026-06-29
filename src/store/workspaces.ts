@@ -15,6 +15,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { prettyPath } from "../lib/format";
+import { useToastStore } from "./toast";
 import {
   DEFAULT_PANEL_SIZE,
   GRID_COLS,
@@ -213,10 +214,17 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           return tab.id;
         },
 
-        closeWorkspace: (id) =>
+        closeWorkspace: (id) => {
+          const state = get();
+          const idx = state.tabs.findIndex((t) => t.id === id);
+          if (idx === -1) return;
+          const removed = state.tabs[idx];
+          const prevActiveId = state.activeId;
+          // Closing the only tab returns to the Launch Hub; offering Undo from
+          // there would be confusing, so skip the toast in that case.
+          const wasLast = state.tabs.length === 1;
+
           set((s) => {
-            const idx = s.tabs.findIndex((t) => t.id === id);
-            if (idx === -1) return s;
             const tabs = s.tabs.filter((t) => t.id !== id);
             let activeId = s.activeId;
             if (s.activeId === id) {
@@ -224,7 +232,24 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               activeId = neighbour?.id ?? null;
             }
             return { tabs, activeId };
-          }),
+          });
+
+          if (!wasLast) {
+            useToastStore.getState().push({
+              message: `Closed “${removed.title}”`,
+              action: {
+                label: "Undo",
+                onClick: () =>
+                  set((s) => {
+                    if (s.tabs.some((t) => t.id === removed.id)) return s;
+                    const tabs = [...s.tabs];
+                    tabs.splice(Math.min(idx, tabs.length), 0, removed);
+                    return { tabs, activeId: prevActiveId ?? removed.id };
+                  }),
+              },
+            });
+          }
+        },
 
         setActive: (id) => set({ activeId: id }),
 
@@ -244,13 +269,25 @@ export const useWorkspacesStore = create<WorkspacesState>()(
             })),
           })),
 
-        resetLayout: (id) =>
+        resetLayout: (id) => {
+          const prev = get().tabs.find((t) => t.id === id);
+          if (!prev) return;
+          // Snapshot the arrangement so the toast can put it back verbatim.
+          const snapshot = { panels: prev.panels, grid: prev.grid, panelFontSizes: prev.panelFontSizes };
           set((s) => ({
             tabs: patch(s.tabs, id, (t) => {
               const fresh = createDefaultWorkspaceLayout();
               return { ...t, panels: fresh.panels, grid: fresh.grid };
             }),
-          })),
+          }));
+          useToastStore.getState().push({
+            message: "Layout reset",
+            action: {
+              label: "Undo",
+              onClick: () => get().loadLayout(id, snapshot.panels, snapshot.grid, snapshot.panelFontSizes),
+            },
+          });
+        },
 
         loadLayout: (id, panels, grid, panelFontSizes) =>
           set((s) => ({

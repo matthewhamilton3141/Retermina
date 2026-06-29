@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from "../lib/theme";
+import { DEFAULT_CUSTOM_GRADIENT, sanitizeGradient, type CustomGradient } from "../lib/gradient";
 import { THEME_FONT_CATEGORY, TERMINAL_FONT_SIZE, fontIdForCategory } from "../lib/fonts";
 import { useRecentStore } from "./recent";
 import { useSessionStore } from "./session";
@@ -12,6 +13,11 @@ export type ToolbarStyle = "dropdown" | "icons";
 export type TopBarStyle  = "icon-only" | "icon-and-text";
 /** Motion policy: follow the OS, force motion on, or force reduced motion. */
 export type MotionPreference = "system" | "full" | "reduced";
+/**
+ * Workspace backdrop: flat color, an accent-derived gradient, a mesh of accent
+ * blobs, or a fully user-defined gradient (see `customBackdrop`).
+ */
+export type BackdropStyle = "solid" | "gradient" | "mesh" | "custom";
 
 export interface CustomTheme {
   id: string;
@@ -60,6 +66,10 @@ interface AppState {
   reduceTransparency: boolean;
   /** Whether the terminal cursor blinks. */
   terminalCursorBlink: boolean;
+  /** Workspace backdrop style. */
+  backdropStyle: BackdropStyle;
+  /** The user-defined gradient used when backdropStyle is "custom". */
+  customBackdrop: CustomGradient;
   customThemes: CustomTheme[];
   customFonts: CustomFont[];
 
@@ -79,6 +89,8 @@ interface AppState {
   setHighContrast: (on: boolean) => void;
   setReduceTransparency: (on: boolean) => void;
   setTerminalCursorBlink: (on: boolean) => void;
+  setBackdropStyle: (style: BackdropStyle) => void;
+  setCustomBackdrop: (gradient: CustomGradient) => void;
   saveCustomTheme: (name: string) => void;
   removeCustomTheme: (id: string) => void;
   addCustomFont: (font: CustomFont) => void;
@@ -108,6 +120,8 @@ export const useAppStore = create<AppState>()(
       highContrast: false,
       reduceTransparency: false,
       terminalCursorBlink: true,
+      backdropStyle: "solid",
+      customBackdrop: DEFAULT_CUSTOM_GRADIENT,
       customThemes: [],
       customFonts: [],
 
@@ -163,6 +177,8 @@ export const useAppStore = create<AppState>()(
       setHighContrast: (on) => set({ highContrast: on }),
       setReduceTransparency: (on) => set({ reduceTransparency: on }),
       setTerminalCursorBlink: (on) => set({ terminalCursorBlink: on }),
+      setBackdropStyle: (style) => set({ backdropStyle: style }),
+      setCustomBackdrop: (gradient) => set({ customBackdrop: gradient }),
 
       saveCustomTheme: (name) => {
         const { themeId, accentColor } = get();
@@ -212,6 +228,8 @@ export const useAppStore = create<AppState>()(
         highContrast: s.highContrast,
         reduceTransparency: s.reduceTransparency,
         terminalCursorBlink: s.terminalCursorBlink,
+        backdropStyle: s.backdropStyle,
+        customBackdrop: s.customBackdrop,
         customThemes: s.customThemes,
         customFonts: s.customFonts,
       }),
@@ -243,9 +261,14 @@ export const useAppStore = create<AppState>()(
         const highContrast = typeof p?.highContrast === "boolean" ? p.highContrast : current.highContrast;
         const reduceTransparency = typeof p?.reduceTransparency === "boolean" ? p.reduceTransparency : current.reduceTransparency;
         const terminalCursorBlink = typeof p?.terminalCursorBlink === "boolean" ? p.terminalCursorBlink : current.terminalCursorBlink;
+        const backdropStyle: BackdropStyle =
+          p?.backdropStyle === "solid" || p?.backdropStyle === "gradient" ||
+          p?.backdropStyle === "mesh" || p?.backdropStyle === "custom"
+            ? p.backdropStyle : current.backdropStyle;
+        const customBackdrop = sanitizeGradient(p?.customBackdrop) ?? current.customBackdrop;
         const customThemes = Array.isArray(p?.customThemes) ? p!.customThemes : current.customThemes;
         const customFonts = Array.isArray(p?.customFonts) ? p!.customFonts : current.customFonts;
-        return { ...current, view, themeId, toolbarStyle, topBarStyle, accentColor, fontId, terminalFontId, terminalFontSize, autoPairFont, uiScale, motionPreference, highContrast, reduceTransparency, terminalCursorBlink, customThemes, customFonts };
+        return { ...current, view, themeId, toolbarStyle, topBarStyle, accentColor, fontId, terminalFontId, terminalFontSize, autoPairFont, uiScale, motionPreference, highContrast, reduceTransparency, terminalCursorBlink, backdropStyle, customBackdrop, customThemes, customFonts };
       },
     },
   ),

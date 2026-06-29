@@ -33,6 +33,7 @@ import {
   type ThemeMeta,
 } from "../lib/theme";
 import { FONT_BY_ID, customFontStack } from "../lib/fonts";
+import { gradientToCss } from "../lib/gradient";
 import { registerAllCustomFonts } from "../lib/fontRegistry";
 import { setClaudeTheme } from "../lib/fs";
 
@@ -136,6 +137,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const motionPreference    = useAppStore((state) => state.motionPreference);
   const highContrast        = useAppStore((state) => state.highContrast);
   const reduceTransparency  = useAppStore((state) => state.reduceTransparency);
+  const backdropStyle       = useAppStore((state) => state.backdropStyle);
+  const customBackdrop      = useAppStore((state) => state.customBackdrop);
   const customFonts = useAppStore((state) => state.customFonts);
 
   // The engine's CSS terminal surface, resolved to a concrete colour. Kept in
@@ -171,6 +174,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // Accessibility toggles — index.css overrides theme tokens off these.
     el.dataset.contrast = highContrast ? "high" : "normal";
     el.dataset.transparency = reduceTransparency ? "reduced" : "full";
+
+    // Workspace backdrop — index.css reads data-backdrop to pick the accent
+    // gradient/mesh overlay; the user-defined gradient is supplied inline here.
+    el.dataset.backdrop = backdropStyle;
+    if (backdropStyle === "custom") {
+      el.style.setProperty("--rt-custom-backdrop", gradientToCss(customBackdrop));
+    } else {
+      el.style.removeProperty("--rt-custom-backdrop");
+    }
 
     if (accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor)) {
       el.style.setProperty("--rt-accent",            accentColor);
@@ -210,7 +222,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // terminal surface so the xterm canvas can paint with the exact same colour
     // as its panel (and pick up accent-derived tints, e.g. Pastel/Glass).
     setTerminalBg(resolveCssColor("--rt-terminal-bg"));
-  }, [theme.id, accentColor, fontId, customFonts, uiScale, motionPreference, highContrast, reduceTransparency]);
+  }, [theme.id, accentColor, fontId, customFonts, uiScale, motionPreference, highContrast, reduceTransparency, backdropStyle, customBackdrop]);
 
   // Overlay accent-dependent terminal colours so the terminal and the Claude
   // Code panel track the live accent choice.

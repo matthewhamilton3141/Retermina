@@ -15,7 +15,7 @@
  *   2. Swap    — move it to the drag origin if resize isn't possible.
  *   3. Abort   — snap the dragged panel back if neither is valid.
  */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { noCompactor, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -133,12 +133,35 @@ export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutPro
   const grid        = useWorkspacesStore((s) => s.tabs.find((t) => t.id === workspaceId)?.grid ?? EMPTY_GRID);
   const setGridRaw  = useWorkspacesStore((s) => s.setGrid);
   const closePanelRaw = useWorkspacesStore((s) => s.closePanel);
+  const resetLayoutRaw = useWorkspacesStore((s) => s.resetLayout);
 
   const setGrid    = useCallback((g: WorkspaceGridItem[]) => setGridRaw(workspaceId, g), [setGridRaw, workspaceId]);
   const closePanel = useCallback((id: string) => closePanelRaw(workspaceId, id), [closePanelRaw, workspaceId]);
 
   const { ref, width, height } = useElementSize();
   const mounted = width > 0 && height > 0;
+
+  // Panel focus mode — when set, that panel is maximized to fill the grid and
+  // its siblings are hidden (via CSS keyed off the classes below). All panels
+  // stay mounted so their PTYs keep running. Local + transient by design.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const toggleFocus = useCallback(
+    (id: string) => setFocusedId((cur) => (cur === id ? null : id)),
+    [],
+  );
+
+  // Drop focus if the focused panel is closed/removed.
+  useEffect(() => {
+    if (focusedId && !panels.some((p) => p.id === focusedId)) setFocusedId(null);
+  }, [panels, focusedId]);
+
+  // Esc exits focus mode (only for the foreground tab).
+  useEffect(() => {
+    if (!focusedId || !active) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFocusedId(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusedId, active]);
 
   const rowHeight = useMemo(() => {
     const usable = height - (GRID_ROWS - 1) * GRID_MARGIN[1];
@@ -238,34 +261,44 @@ export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutPro
       panels.map((panel) => {
         const renderer = PANEL_RENDERERS[panel.kind];
         if (!renderer) return null;
+        const isFocused = focusedId === panel.id;
         return (
-          <div key={panel.id} className="overflow-hidden">
+          <div key={panel.id} className={isFocused ? "overflow-hidden rt-panel-focused" : "overflow-hidden"}>
             <PanelFrame
               icon={PANEL_META[panel.kind].icon}
               title={panel.title}
               workspaceId={workspaceId}
               panelId={panel.id}
               onClose={() => closePanel(panel.id)}
+              focused={isFocused}
+              onToggleFocus={() => toggleFocus(panel.id)}
             >
               {renderer({ cwd, workspaceId, active })}
             </PanelFrame>
           </div>
         );
       }),
-    [panels, cwd, closePanel, workspaceId, active],
+    [panels, cwd, closePanel, workspaceId, active, focusedId, toggleFocus],
   );
 
   return (
     <div ref={ref} className="h-full w-full overflow-hidden">
       {!mounted ? null : panels.length === 0 ? (
-        <div className="flex h-full w-full items-center justify-center px-6 text-center">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
           <p className="rt-text-muted text-sm">
-            All panels are hidden. Use the toolbar above to bring one back.
+            All panels are hidden. Toggle one from the toolbar, or:
           </p>
+          <button
+            type="button"
+            onClick={() => resetLayoutRaw(workspaceId)}
+            className="rt-btn-outline px-3 py-1.5 text-sm font-medium"
+          >
+            Restore default layout
+          </button>
         </div>
       ) : (
         <GridLayout
-          className="retermina-grid"
+          className={focusedId ? "retermina-grid rt-has-focus" : "retermina-grid"}
           width={width}
           layout={grid}
           onLayoutChange={handleLayoutChange}
@@ -280,13 +313,14 @@ export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutPro
             maxRows: GRID_ROWS,
           }}
           dragConfig={{
-            enabled: true,
+            // Disable drag/resize while a panel is maximized.
+            enabled: !focusedId,
             handle: ".panel-drag-handle",
             cancel: ".panel-no-drag",
             bounded: true,
           }}
           resizeConfig={{
-            enabled: true,
+            enabled: !focusedId,
             handles: ["n", "ne", "nw", "se", "s", "e", "w", "sw"],
           }}
         >

@@ -11,6 +11,10 @@ export interface PanelFrameProps {
   /** Used to read/write per-panel font size from the workspace store. */
   panelId: string;
   onClose?: () => void;
+  /** Whether this panel is currently maximized (focus mode). */
+  focused?: boolean;
+  /** Toggle focus mode for this panel. */
+  onToggleFocus?: () => void;
   children: ReactNode;
 }
 
@@ -18,7 +22,7 @@ const STEP = 10;
 const MIN  = 70;
 const MAX  = 150;
 
-export function PanelFrame({ icon, title, workspaceId, panelId, onClose, children }: PanelFrameProps) {
+export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused, onToggleFocus, children }: PanelFrameProps) {
   const fontSize = useWorkspacesStore(
     (s) => s.tabs.find((t) => t.id === workspaceId)?.panelFontSizes[panelId] ?? 100,
   );
@@ -30,13 +34,22 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, childre
 
   return (
     <div className="rt-panel flex h-full w-full flex-col overflow-hidden">
-      <div className="rt-panel-header panel-drag-handle flex cursor-move select-none items-center gap-2 px-2.5 py-1.5">
+      <div
+        className="rt-panel-header panel-drag-handle flex cursor-move select-none items-center gap-2 px-2.5 py-1.5"
+        onDoubleClick={onToggleFocus}
+        title={onToggleFocus ? (focused ? "Double-click to restore" : "Double-click to maximize") : undefined}
+      >
         <Icon name="drag" size={14} className="rt-text-faint shrink-0" />
         <Icon name={icon} size={14} className="rt-accent-text shrink-0" />
         <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
 
-        {/* Zoom controls — panel-no-drag so clicks don't start a grid drag */}
-        <div className="panel-no-drag flex shrink-0 items-center gap-0.5">
+        {/* Zoom controls — panel-no-drag so clicks don't start a grid drag.
+            stopPropagation on double-click so using the controls never toggles
+            focus mode via the header's dblclick handler. */}
+        <div
+          className="panel-no-drag flex shrink-0 items-center gap-0.5"
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             onClick={zoomOut}
@@ -67,10 +80,23 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, childre
           </button>
         </div>
 
+        {onToggleFocus && (
+          <button
+            type="button"
+            onClick={onToggleFocus}
+            onDoubleClick={(e) => e.stopPropagation()}
+            title={focused ? "Restore panel" : "Maximize panel"}
+            className="rt-btn panel-no-drag flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
+          >
+            <Icon name={focused ? "minimize" : "maximize"} size={13} aria-label={focused ? "Restore panel" : "Maximize panel"} />
+          </button>
+        )}
+
         {onClose && (
           <button
             type="button"
             onClick={onClose}
+            onDoubleClick={(e) => e.stopPropagation()}
             title={`Close ${title}`}
             className="rt-btn panel-no-drag flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
           >

@@ -354,7 +354,10 @@ body {
  */
 .rt-app {
   background-color: var(--rt-bg);
-  background-image: var(--rt-bg-image);
+  /* The optional backdrop overlay (set by data-backdrop, default none) layers
+   * ON TOP of each engine's own --rt-bg-image, so the "Solid" default leaves
+   * every theme looking exactly as it did before the backdrop feature. */
+  background-image: var(--rt-backdrop-overlay, none), var(--rt-bg-image);
   color: var(--rt-text);
   /* Match html's clip radius so the theme background itself is visually
    * rounded, and add a native-feeling drop shadow for the window chrome. */
@@ -665,6 +668,27 @@ body {
   box-shadow: none;
 }
 
+/* Panel focus mode.
+ *
+ * When a panel is maximized, WorkspaceLayout adds `rt-has-focus` to the grid
+ * and `rt-panel-focused` to the chosen item. The focused item is pulled out of
+ * its RGL transform to fill the grid (the `!important`s beat RGL's inline
+ * width/height/transform), and the siblings are hidden — but kept in the DOM so
+ * their PTYs keep running. */
+.retermina-grid .react-grid-item.rt-panel-focused {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  z-index: 40;
+}
+
+.retermina-grid.rt-has-focus .react-grid-item:not(.rt-panel-focused) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Side/bottom cursors */
 .retermina-grid .react-resizable-handle-w  { cursor: ew-resize; }
 .retermina-grid .react-resizable-handle-sw { cursor: sw-resize; }
@@ -839,4 +863,38 @@ body {
 
 [data-theme="glass"][data-transparency="reduced"] {
   --rt-bg: rgb(236, 238, 243);
+}
+
+/*
+ * Workspace backdrop overlays.
+ *
+ * `data-backdrop` (set on <html> by ThemeProvider) selects an accent-derived
+ * gradient/mesh, or the user's own gradient, exposed as --rt-backdrop-overlay.
+ * `.rt-app` composes it over the engine's --rt-bg-image; "solid" sets nothing,
+ * so the inherited fallback `none` leaves the theme's native backdrop intact.
+ * The accent presets are mixed from the live --rt-accent, so they re-tint with
+ * a custom accent on every engine, light or dark.
+ */
+[data-backdrop="gradient"] {
+  --rt-backdrop-overlay:
+    radial-gradient(125% 125% at 0% 0%,
+      color-mix(in srgb, var(--rt-accent) 20%, transparent), transparent 55%),
+    radial-gradient(125% 125% at 100% 100%,
+      color-mix(in srgb, var(--rt-accent) 13%, transparent), transparent 55%);
+}
+
+[data-backdrop="mesh"] {
+  --rt-backdrop-overlay:
+    radial-gradient(40% 40% at 15% 20%,
+      color-mix(in srgb, var(--rt-accent) 24%, transparent), transparent 70%),
+    radial-gradient(45% 45% at 85% 12%,
+      color-mix(in srgb, var(--rt-accent) 15%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 78% 88%,
+      color-mix(in srgb, var(--rt-accent) 20%, transparent), transparent 72%),
+    radial-gradient(42% 42% at 18% 92%,
+      color-mix(in srgb, var(--rt-accent) 13%, transparent), transparent 70%);
+}
+
+[data-backdrop="custom"] {
+  --rt-backdrop-overlay: var(--rt-custom-backdrop, none);
 }

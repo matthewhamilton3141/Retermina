@@ -7,9 +7,10 @@
  * the persisted Zustand app store, so changes survive restarts (the store is
  * mirrored to settings.json by the persist middleware).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import Icon, { type IconName } from "./Icon";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import ThemeTab from "./settings/ThemeTab";
 import AppearanceTab from "./settings/AppearanceTab";
 import AccessibilityTab from "./settings/AccessibilityTab";
@@ -35,6 +36,11 @@ export interface SettingsModalProps {
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [tab, setTab] = useState<TabId>("theme");
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Trap focus inside the dialog while open and restore it to the opener on
+  // close (the gear button), so keyboard users don't tab into the app behind.
+  useFocusTrap(dialogRef, open);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +71,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       aria-modal="true"
       aria-label="Settings"
     >
-      <div className="rt-card flex h-[34rem] max-h-[88vh] w-full max-w-3xl overflow-hidden shadow-2xl">
+      <div ref={dialogRef} className="rt-card flex h-[34rem] max-h-[88vh] w-full max-w-3xl overflow-hidden shadow-2xl">
         {/* Tab rail */}
         <nav className="flex w-44 shrink-0 flex-col gap-1 border-r border-[var(--rt-border)] bg-[var(--rt-surface-strong)] p-3">
           <p className="rt-text-faint mb-2 px-2 text-sm font-semibold">Settings</p>
