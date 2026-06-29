@@ -51,17 +51,18 @@ Panel children are memoized against `[panels, cwd, closePanel]` so live terminal
 
 ### Modular panel workspace
 
-Seven panel types can be independently toggled, dragged, resized, and arranged across the 12-column grid:
+Eight panel types can be independently toggled, dragged, resized, and arranged across the 12-column grid:
 
 | Panel | Purpose |
 |---|---|
 | **Explorer** | Directory tree with expand/collapse navigation, inline create/rename/delete, and a right-click context menu |
-| **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY. Supports scrollback search (**Cmd/Ctrl+F**) and clickable links (open in the default browser) |
+| **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY, with a **broadcast** toggle that mirrors input to every pane. Supports scrollback search (**Cmd/Ctrl+F**) and clickable links (open in the default browser) |
 | **Code** | Read-only (or Safe Edit) file viewer with syntax highlighting, live diff, and inline hex colour swatches |
 | **Localhost** | Active port tracker with one-click process termination |
 | **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip. Its UI theme tracks the active engine (see [Semantic theming](#semantic-theming-engine)), and a dismissible prompt offers to restart the session when a light↔dark switch needs it |
 | **Preview** | Live preview launcher — opens a standalone native window pointed at a dev-server URL |
-| **Changes** | Live project-wide git diff (working tree vs `HEAD`) that updates as files change — including edits made by the Claude CLI in the Terminal |
+| **Changes** | Live project-wide git diff (working tree vs `HEAD`) that updates as files change — including edits made by the Claude CLI in the Terminal — with a commit composer (message + "Commit all") and per-file discard |
+| **Tasks** | Auto-detected runnable scripts — `package.json` (npm/pnpm/yarn/bun), `Makefile` targets, and Cargo — each a one-click button that runs in the active terminal |
 
 Panels snap to the grid, resize from all eight edges, and resolve collisions without flying off-screen.
 
@@ -85,6 +86,8 @@ Each terminal loads xterm's **search** and **web-links** addons. **Cmd/Ctrl+F** 
 
 The read-only Code view is tokenized with **Prism** and rendered to React nodes (not an HTML string), so highlighting and the hex-colour swatches coexist — every plain-text token is still scanned for colour literals. Token colours are driven by per-engine `--rt-syn-*` CSS variables, so the highlighting re-themes with the app and stays legible on both light and dark engines. Language is resolved from the file extension (TS/TSX, JS/JSX, JSON, CSS, HTML, Markdown, Bash, Python, Rust, YAML, TOML); unknown types or very large files fall back to plain text + swatches.
 
+Markdown files (`.md` / `.markdown` / `.mdx`) additionally get a **rendered preview** — default on, with a one-click Preview/Source toggle. The renderer (`lib/markdown.tsx`) is a dependency-free subset that outputs React nodes (never an HTML string) and restricts link schemes, so file content can't inject markup.
+
 #### Inline colour swatches
 
 The Code viewer scans file contents for CSS hex colour literals (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`) and renders a small colour chip immediately before each value, the way VS Code does. Decoration is skipped above 200 KB so large files stay responsive.
@@ -104,6 +107,8 @@ Right-click menus and popovers render through a portal into `document.body` (`Fl
 ### Iris command bar
 
 Iris is a **local, tokenless** command bar at the bottom of the workspace. It requires no API keys, no network connection, and no LLM inference.
+
+**Custom macros.** Beyond the built-in catalog below, you can add your **own** macros — a name, match keywords, and a command line — from the manager on the Iris bar. They're persisted locally and merged into the suggestion ranking (always available, run as typed), so your repeated workflows become one fuzzy match away.
 
 **How it works:**
 - A static macro catalog is filtered at query time against `IrisCtx` — a context object that merges live Git state (branch, ahead/behind counts, staged/unstaged file counts) with the currently open file path.
@@ -246,6 +251,8 @@ Where the Code panel's diff tracks a single open file against a manual snapshot,
 - **Tracked edits** come from `git diff HEAD`; **new untracked files** are read directly and rendered as all-additions (git omits them from the diff until staged).
 - Files carry a status badge (M/A/D/R/U) and per-file `+/−` counts, with green/red line rendering and `@@` hunk headers.
 - Because it just polls git, it reflects edits from **anywhere** — most usefully, changes the Claude CLI makes while running in the Terminal show up here live.
+
+It's also **actionable**: a commit composer (message + **Commit all** → `git add -A && git commit`) and a per-file **discard** (`git checkout` / `git clean` for untracked, with a confirm) run through the same `run_background_command` bridge — no new native commands — and refresh the diff on success.
 
 ### Live preview window
 
