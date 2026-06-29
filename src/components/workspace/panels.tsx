@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 
 import Icon from "../Icon";
 import { highlightCode } from "../../lib/highlight";
+import { renderMarkdown } from "../../lib/markdown";
 import { useEditorStore } from "../../store/editor";
 import { getClaudeTokenUsage, setClaudeTheme, type ClaudeTokenUsage } from "../../lib/fs";
 import { claudeThemeForEngine } from "../../lib/theme";
@@ -75,6 +76,10 @@ function CodeViewPanel() {
 
   const fileName = selectedPath ? selectedPath.split("/").pop() : null;
   const canEdit = !!selectedPath && !loading && !error;
+  const isMarkdown = /\.(md|markdown|mdx)$/i.test(selectedPath ?? "");
+  // Markdown files default to the rendered preview; toggle to see source.
+  const [mdPreview, setMdPreview] = useState(true);
+  const showMarkdown = isMarkdown && mdPreview && !isEditing && !diffMode;
 
   // Scroll to a target line once content has rendered (set by content search).
   // The read-only <pre> uses `whitespace-pre` (no wrapping), so one source line
@@ -98,6 +103,19 @@ function CodeViewPanel() {
         <span className="rt-text-muted min-w-0 flex-1 truncate text-xs font-medium">
           {fileName ?? "No file open"}
         </span>
+
+        {/* Markdown preview / source toggle */}
+        {canEdit && isMarkdown && !isEditing && !diffMode && (
+          <button
+            type="button"
+            onClick={() => setMdPreview((v) => !v)}
+            title={mdPreview ? "View Markdown source" : "Preview Markdown"}
+            className={`rt-btn-outline flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium ${mdPreview ? "rt-btn-active" : ""}`}
+          >
+            <Icon name="preview" size={11} />
+            {mdPreview ? "Preview" : "Source"}
+          </button>
+        )}
 
         {/* Diff toggle — hidden while editing */}
         {canEdit && !isEditing && !diffMode && <DiffViewer headerOnly />}
@@ -193,6 +211,8 @@ function CodeViewPanel() {
             <div className="px-3 py-2">
               <p className="rt-text-muted text-[11px] leading-snug">{error}</p>
             </div>
+          ) : showMarkdown ? (
+            <div className="h-full w-full overflow-auto px-4 py-3">{renderMarkdown(content ?? "")}</div>
           ) : (
             <pre ref={preRef} className="rt-code h-full w-full overflow-auto p-3 font-mono text-[12px] leading-relaxed whitespace-pre">
               {highlightCode(content, fileName ?? "")}
