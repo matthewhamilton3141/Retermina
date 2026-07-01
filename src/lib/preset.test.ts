@@ -77,6 +77,12 @@ describe("parsePreset — repairs partial documents", () => {
   it("trims a provided name and preserves it", () => {
     expect(parsePreset({ name: "  My Loom  " })!.name).toBe("My Loom");
   });
+
+  it("defaults scope to full and keeps a valid layout scope", () => {
+    expect(parsePreset({})!.scope).toBe("full"); // pre-scope v1 documents
+    expect(parsePreset({ scope: "layout" })!.scope).toBe("layout");
+    expect(parsePreset({ scope: "bogus" })!.scope).toBe("full");
+  });
 });
 
 describe("parsePreset — bundled font assets", () => {
@@ -138,5 +144,12 @@ describe("buildPreset", () => {
     expect(reparsed.theme.themeId).toBe("pastel");
     expect(reparsed.theme.accentColor).toBe("#8b5cf6");
     expect(reparsed.name).toBe("RT");
+  });
+
+  it("defaults to full scope and round-trips a layout scope", () => {
+    expect(buildPreset("A", theme, workspace).scope).toBe("full");
+    const layoutOnly = buildPreset("B", theme, workspace, undefined, "layout");
+    expect(layoutOnly.scope).toBe("layout");
+    expect(parsePreset(JSON.parse(JSON.stringify(layoutOnly)))!.scope).toBe("layout");
   });
 });

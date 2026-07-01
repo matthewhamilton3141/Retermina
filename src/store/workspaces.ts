@@ -46,9 +46,38 @@ export interface WorkspaceTab {
   panelFontSizes: Record<string, number>;
 }
 
+/**
+ * The layout new tabs are born with. Set whenever the user applies a preset
+ * (workspace preset or Loom), so an applied preset follows them across
+ * newly opened / reopened workspaces instead of snapping back to the default
+ * grid. Null → `createDefaultWorkspaceLayout()`.
+ */
+export interface WorkspaceLayoutTemplate {
+  panels: WorkspacePanel[];
+  grid: WorkspaceGridItem[];
+  panelFontSizes: Record<string, number>;
+}
+
+/** A remembered per-folder layout, stamped so the map can evict oldest-first. */
+interface FolderLayout extends WorkspaceLayoutTemplate {
+  updatedAt: number;
+}
+
+/** How many closed folders' layouts we remember before evicting the oldest. */
+const FOLDER_LAYOUTS_CAP = 30;
+
 interface WorkspacesState {
   tabs: WorkspaceTab[];
   activeId: string | null;
+  /** Layout template applied to freshly created tabs (see {@link WorkspaceLayoutTemplate}). */
+  layoutTemplate: WorkspaceLayoutTemplate | null;
+  /**
+   * Last-known layout per folder (keyed by cwd), snapshotted when its tab
+   * closes, so reopening a project restores how *that* project was arranged.
+   * Wins over `layoutTemplate` for folders we've seen before; cleared whenever
+   * a preset is applied so a fresh preset takes effect everywhere.
+   */
+  folderLayouts: Record<string, FolderLayout>;
 
   // ── Tab management ────────────────────────────────────────────────────────
   /** Activate the tab matching `cwd`, or create one if none exists. Returns its id. */
@@ -74,6 +103,8 @@ interface WorkspacesState {
   setPanelFontSize: (id: string, panelId: string, size: number) => void;
   /** Append a fresh terminal panel to a free grid slot. Used by split pop-out. */
   addTerminalPanel: (id: string) => void;
+  /** Remember (or clear) the layout that newly created tabs should start from. */
+  setLayoutTemplate: (template: WorkspaceLayoutTemplate | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,15 +118,18 @@ const newId = () =>
 
 const titleFor = (cwd: string | null) => (cwd ? prettyPath(cwd) : "Blank Terminal");
 
-function makeTab(cwd: string | null): WorkspaceTab {
-  const layout = createDefaultWorkspaceLayout();
+function makeTab(cwd: string | null, template?: WorkspaceLayoutTemplate | null): WorkspaceTab {
+  // Clone the template so tabs never share panel/grid object identity.
+  const layout = template
+    ? structuredClone(template)
+    : { ...createDefaultWorkspaceLayout(), panelFontSizes: {} };
   return {
     id: newId(),
     cwd,
     title: titleFor(cwd),
     panels: layout.panels,
-    grid: layout.grid,
-    panelFontSizes: {},
+    grid: layout.grid.map(sanitizeGridItem),
+    panelFontSizes: layout.panelFontSizes,
   };
 }
 
@@ -198,6 +232,8 @@ export const useWorkspacesStore = create<WorkspacesState>()(
       return {
         tabs: initialTabs,
         activeId: initialTabs[0]?.id ?? null,
+        layoutTemplate: null,
+        folderLayouts: {},
 
         openWorkspace: (cwd = null) => {
           const existing = get().tabs.find((t) => t.cwd === cwd);
@@ -205,13 +241,16 @@ export const useWorkspacesStore = create<WorkspacesState>()(
             set({ activeId: existing.id });
             return existing.id;
           }
-          const tab = makeTab(cwd);
+          // A folder we've arranged before reopens the way we left it;
+          // otherwise fall back to the applied preset, then the default grid.
+          const remembered = cwd ? get().folderLayouts[cwd] : undefined;
+          const tab = makeTab(cwd, remembered ?? get().layoutTemplate);
           set((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
           return tab.id;
         },
 
         newWorkspace: (cwd = null) => {
-          const tab = makeTab(cwd);
+          const tab = makeTab(cwd, get().layoutTemplate);
           set((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
           return tab.id;
         },
@@ -233,7 +272,30 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               const neighbour = tabs[idx] ?? tabs[idx - 1] ?? tabs[0] ?? null;
               activeId = neighbour?.id ?? null;
             }
-            return { tabs, activeId };
+            // Remember how this folder was arranged so reopening it restores
+            // the same layout. Capped: evict the oldest entries beyond the cap.
+            let folderLayouts = s.folderLayouts;
+            if (removed.cwd) {
+              folderLayouts = {
+                ...folderLayouts,
+                [removed.cwd]: {
+                  panels: removed.panels,
+                  grid: removed.grid.map(sanitizeGridItem),
+                  panelFontSizes: removed.panelFontSizes,
+                  updatedAt: Date.now(),
+                },
+              };
+              const keys = Object.keys(folderLayouts);
+              if (keys.length > FOLDER_LAYOUTS_CAP) {
+                for (const key of keys
+                  .sort((a, b) => folderLayouts[a].updatedAt - folderLayouts[b].updatedAt)
+                  .slice(0, keys.length - FOLDER_LAYOUTS_CAP)) {
+                  const { [key]: _evicted, ...rest } = folderLayouts;
+                  folderLayouts = rest;
+                }
+              }
+            }
+            return { tabs, activeId, folderLayouts };
           });
 
           if (!wasLast) {
@@ -356,6 +418,20 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               };
             }),
           })),
+
+        setLayoutTemplate: (template) =>
+          set((s) => ({
+            layoutTemplate: template
+              ? {
+                  panels: template.panels,
+                  grid: template.grid.map(sanitizeGridItem),
+                  panelFontSizes: template.panelFontSizes ?? {},
+                }
+              : null,
+            // A freshly applied preset should win everywhere — drop remembered
+            // per-folder layouts so reopened folders pick it up too.
+            folderLayouts: template ? {} : s.folderLayouts,
+          })),
       };
     },
     {
@@ -371,6 +447,8 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           panelFontSizes: t.panelFontSizes,
         })),
         activeId: state.activeId,
+        layoutTemplate: state.layoutTemplate,
+        folderLayouts: state.folderLayouts,
       }),
       // Reject corrupt persisted state and fall back to a freshly seeded tab.
       merge: (persisted, current) => {
@@ -383,12 +461,47 @@ export const useWorkspacesStore = create<WorkspacesState>()(
             isWorkspacePanelArray(t.panels) &&
             isWorkspaceGridArray(t.grid),
         );
-        if (valid.length === 0) return current;
+        const template =
+          data?.layoutTemplate &&
+          isWorkspacePanelArray(data.layoutTemplate.panels) &&
+          isWorkspaceGridArray(data.layoutTemplate.grid)
+            ? {
+                panels: data.layoutTemplate.panels,
+                grid: data.layoutTemplate.grid.map(sanitizeGridItem),
+                panelFontSizes:
+                  data.layoutTemplate.panelFontSizes &&
+                  typeof data.layoutTemplate.panelFontSizes === "object"
+                    ? data.layoutTemplate.panelFontSizes
+                    : {},
+              }
+            : null;
+        const folderLayouts: Record<string, FolderLayout> = {};
+        if (data?.folderLayouts && typeof data.folderLayouts === "object") {
+          for (const [cwd, layout] of Object.entries(data.folderLayouts)) {
+            if (
+              layout &&
+              isWorkspacePanelArray(layout.panels) &&
+              isWorkspaceGridArray(layout.grid)
+            ) {
+              folderLayouts[cwd] = {
+                panels: layout.panels,
+                grid: layout.grid.map(sanitizeGridItem),
+                panelFontSizes:
+                  layout.panelFontSizes && typeof layout.panelFontSizes === "object"
+                    ? layout.panelFontSizes
+                    : {},
+                updatedAt: typeof layout.updatedAt === "number" ? layout.updatedAt : 0,
+              };
+            }
+          }
+        }
+        if (valid.length === 0)
+          return { ...current, layoutTemplate: template, folderLayouts };
         const activeId =
           typeof data?.activeId === "string" && valid.some((t) => t.id === data.activeId)
             ? data.activeId
             : valid[0].id;
-        return { ...current, tabs: valid, activeId };
+        return { ...current, tabs: valid, activeId, layoutTemplate: template, folderLayouts };
       },
     },
   ),

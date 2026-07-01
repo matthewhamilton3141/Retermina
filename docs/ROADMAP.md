@@ -47,6 +47,17 @@ polish, low urgency, fun.
 
 ## Done (shipped from this backlog)
 
+- **Unified preset system** — the toolbar workspace presets folded into the
+  Loom library as layout-scoped Looms (`scope: "full" | "layout"`); old
+  localStorage presets migrate automatically on first launch. Layout presets
+  now carry per-panel font sizes too.
+- **Presets follow you across workspaces** — applying a preset sets a layout
+  template that newly opened/reopened tabs inherit, instead of every new tab
+  snapping back to the default grid.
+- **Per-folder layout memory** — closing a workspace snapshots its layout by
+  cwd (capped at 30 folders); reopening that folder restores it. Applying a
+  preset clears the memories so a fresh preset wins everywhere.
+
 - **Commit SHA in the bottom bar** — the IrisBar git chip now shows the short
   HEAD sha next to the branch. _(parsed from `# branch.oid` in the existing
   porcelain-v2 call — no extra git invocation.)_
@@ -69,3 +80,7 @@ optional"), so folder-access grants don't persist against an ad-hoc-signed
 binary and macOS re-prompts each launch. **Proper fix = Apple Developer signing +
 notarization**, not a quick code change. Still want to confirm by seeing the
 exact prompt text before committing to that path.
+
+**Decision (2026-07-01):** not pursuing the Apple Developer membership for now —
+parked until there's a reason to pay for the account. Revisit if the launch
+prompts become a real user complaint.

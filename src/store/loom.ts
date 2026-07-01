@@ -22,14 +22,17 @@ import {
   buildPreset,
   parsePreset,
   type PresetFontAsset,
+  type PresetScope,
   type PresetTheme,
   type PresetWorkspace,
   type ReterminaPreset,
 } from "../lib/preset";
 import { readFile, writeFile, readPresets, writePresets } from "../lib/fs";
+import { isWorkspaceGridArray, isWorkspacePanelArray } from "../lib/workspaceLayout";
 import { registerCustomFont } from "../lib/fontRegistry";
 import { useAppStore } from "./app";
 import { useWorkspaceStore } from "./workspace";
+import { useWorkspacesStore } from "./workspaces";
 
 // ── Capture / apply bridges to the other stores ──────────────────────────────
 
@@ -71,6 +74,25 @@ function captureWorkspace(): PresetWorkspace {
 function applyPreset(preset: ReterminaPreset): void {
   const safe = parsePreset(preset) ?? preset;
 
+  // Layout-only Looms leave the theme alone.
+  if (safe.scope !== "layout") applyPresetTheme(safe);
+
+  useWorkspaceStore.setState({
+    panels: safe.workspace.panels,
+    grid: safe.workspace.grid,
+    panelFontSizes: safe.workspace.panelFontSizes,
+  });
+
+  // Newly opened / reopened workspace tabs should keep this layout too,
+  // rather than snapping back to the default grid.
+  useWorkspacesStore.getState().setLayoutTemplate({
+    panels: safe.workspace.panels,
+    grid: safe.workspace.grid,
+    panelFontSizes: safe.workspace.panelFontSizes,
+  });
+}
+
+function applyPresetTheme(safe: ReterminaPreset): void {
   useAppStore.setState({
     themeId: safe.theme.themeId,
     accentColor: safe.theme.accentColor,
@@ -86,12 +108,6 @@ function applyPreset(preset: ReterminaPreset): void {
     terminalCursorBlink: safe.theme.terminalCursorBlink,
     backdropStyle: safe.theme.backdropStyle,
     customBackdrop: safe.theme.customBackdrop,
-  });
-
-  useWorkspaceStore.setState({
-    panels: safe.workspace.panels,
-    grid: safe.workspace.grid,
-    panelFontSizes: safe.workspace.panelFontSizes,
   });
 }
 
@@ -174,8 +190,11 @@ const tauriFileStorage: StateStorage = {
 interface LoomState {
   presets: ReterminaPreset[];
 
-  /** Capture the live theme + workspace as a new named preset. */
-  saveCurrentAsPreset: (name: string) => void;
+  /**
+   * Capture the live state as a new named preset. Scope "full" (default)
+   * bundles theme + layout; "layout" captures just the panel arrangement.
+   */
+  saveCurrentAsPreset: (name: string, scope?: PresetScope) => void;
   /** Re-hydrate the whole app from a saved preset. */
   loadPreset: (id: string) => void;
   /** Remove a preset from the library. */
@@ -197,10 +216,10 @@ export const useLoomStore = create<LoomState>()(
     (set, get) => ({
       presets: [],
 
-      saveCurrentAsPreset: (name) => {
+      saveCurrentAsPreset: (name, scope = "full") => {
         const trimmed = name.trim();
         if (!trimmed) return;
-        const preset = buildPreset(trimmed, captureTheme(), captureWorkspace());
+        const preset = buildPreset(trimmed, captureTheme(), captureWorkspace(), undefined, scope);
         set((s) => ({
           // Overwrite a same-named preset rather than duplicating it.
           presets: [preset, ...s.presets.filter((p) => p.name.toLowerCase() !== trimmed.toLowerCase())],
@@ -277,6 +296,54 @@ export const useLoomStore = create<LoomState>()(
       version: PRESET_VERSION,
       storage: createJSONStorage(() => tauriFileStorage),
       partialize: (s) => ({ presets: s.presets }),
+      onRehydrateStorage: () => () => migrateWorkspacePresets(),
     },
   ),
 );
+
+/**
+ * One-time migration: fold the legacy toolbar workspace presets
+ * (localStorage `retermina.workspace-presets`) into the Loom library as
+ * layout-scoped Looms, then drop the old key so this never re-runs.
+ */
+const LEGACY_PRESETS_KEY = "retermina.workspace-presets";
+
+function migrateWorkspacePresets(): void {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(LEGACY_PRESETS_KEY);
+  } catch {
+    return; // No localStorage (tests) — nothing to migrate.
+  }
+  if (!raw) return;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      state?: { presets?: Array<{ id?: unknown; name?: unknown; panels?: unknown; grid?: unknown; createdAt?: unknown }> };
+    };
+    const legacy = Array.isArray(parsed?.state?.presets) ? parsed.state.presets : [];
+    const migrated = legacy
+      // Drop corrupt entries instead of letting them degrade to default layouts.
+      .filter((p) => isWorkspacePanelArray(p.panels) && isWorkspaceGridArray(p.grid))
+      .map((p) =>
+        parsePreset({
+          id: p.id,
+          name: p.name,
+          createdAt: p.createdAt,
+          scope: "layout",
+          workspace: { panels: p.panels, grid: p.grid, panelFontSizes: {} },
+        }),
+      )
+      .filter((p): p is ReterminaPreset => p !== null);
+
+    if (migrated.length > 0) {
+      useLoomStore.setState((s) => {
+        const existing = new Set(s.presets.map((p) => p.id));
+        return { presets: [...s.presets, ...migrated.filter((p) => !existing.has(p.id))] };
+      });
+    }
+    localStorage.removeItem(LEGACY_PRESETS_KEY);
+  } catch {
+    // Corrupt legacy state — leave it in place and carry on with the library.
+  }
+}
