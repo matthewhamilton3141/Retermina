@@ -28,7 +28,7 @@ Retermina is a native desktop application built with [Tauri v2](https://v2.tauri
 - **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
 - **Claude integration** (`claude_stats.rs`) — `get_claude_token_usage` parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost. `set_claude_theme` keeps Claude Code's own UI theme in step with the active engine by surgically updating the `theme` key in `~/.claude.json` (read-modify-write of that one key, atomic temp-file rename, and it never creates the file).
 - **Loom presets** (`presets.rs`) — `read_presets` / `write_presets` persist the preset library to `<data_dir>/Retermina/presets.json`, serving as the Tauri-file storage backend for the Loom store.
-- **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata to the Iris command bar.
+- **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata (branch, short HEAD commit from the `# branch.oid` line, ahead/behind counts, staged/unstaged file counts) to the Iris command bar.
 - **Port discovery** — `lsof` / `netstat` parsing to surface active local servers in the Localhost Tracker panel.
 
 IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. The `updater` + `process` plugins back the Settings → Version self-update flow, and the `dialog` plugin powers Loom export/import file pickers. All window actions (drag, close, destroy, minimize, maximize, animated resize) and plugin permissions are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed. (`allow-destroy` is what lets the Preview pop-out actually tear itself down on close.)
@@ -57,7 +57,7 @@ Eight panel types can be independently toggled, dragged, resized, and arranged a
 |---|---|
 | **Explorer** | Directory tree with expand/collapse navigation, inline create/rename/delete, and a right-click context menu |
 | **Terminal** | Live xterm.js shell connected to a native PTY — splittable into independent panes (H / V) from a top toolbar, each with its own PTY, with a **broadcast** toggle that mirrors input to every pane. Supports scrollback search (**Cmd/Ctrl+F**) and clickable links (open in the default browser) |
-| **Code** | Read-only (or Safe Edit) file viewer with syntax highlighting, live diff, and inline hex colour swatches |
+| **Code** | File viewer with syntax highlighting, live diff, and inline hex colour swatches — plus a Safe Edit mode that keeps full highlighting while you type and adds in-file find & replace (**Cmd/Ctrl+F**) |
 | **Localhost** | Active port tracker with one-click process termination |
 | **Claude Code** | Dedicated terminal that auto-launches the `claude` CLI, with a per-project token-usage strip. Its UI theme tracks the active engine (see [Semantic theming](#semantic-theming-engine)), and a dismissible prompt offers to restart the session when a light↔dark switch needs it |
 | **Preview** | Live preview launcher — opens a standalone native window pointed at a dev-server URL |
@@ -86,6 +86,8 @@ Each terminal loads xterm's **search** and **web-links** addons. **Cmd/Ctrl+F** 
 
 The read-only Code view is tokenized with **Prism** and rendered to React nodes (not an HTML string), so highlighting and the hex-colour swatches coexist — every plain-text token is still scanned for colour literals. Token colours are driven by per-engine `--rt-syn-*` CSS variables, so the highlighting re-themes with the app and stays legible on both light and dark engines. Language is resolved from the file extension (TS/TSX, JS/JSX, JSON, CSS, HTML, Markdown, Bash, Python, Rust, YAML, TOML); unknown types or very large files fall back to plain text + swatches.
 
+Highlighting no longer stops when you unlock the file: **Safe Edit** layers a transparent-text `<textarea>` over the highlighted `<pre>` (scroll-synced, matched font metrics), so full syntax colour survives as you type instead of dropping to a plain textarea. Edit mode also gets **in-file find & replace** (**Cmd/Ctrl+F**): next/previous navigation with a live match counter, replace one or replace all — case-insensitive literal matching over the edit draft.
+
 Markdown files (`.md` / `.markdown` / `.mdx`) additionally get a **rendered preview** — default on, with a one-click Preview/Source toggle. The renderer (`lib/markdown.tsx`) is a dependency-free subset that outputs React nodes (never an HTML string) and restricts link schemes, so file content can't inject markup.
 
 #### Inline colour swatches
@@ -107,6 +109,8 @@ Right-click menus and popovers render through a portal into `document.body` (`Fl
 ### Iris command bar
 
 Iris is a **local, tokenless** command bar at the bottom of the workspace. It requires no API keys, no network connection, and no LLM inference.
+
+The bar doubles as a **git status strip**: inside a repo it shows the current branch, the short **HEAD commit** (`@abc1234`), ahead/behind counts, and an uncommitted-changes dot — all parsed from the single `git status --porcelain=v2` call that also gates the macros, so the commit display costs no extra git invocation.
 
 **Custom macros.** Beyond the built-in catalog below, you can add your **own** macros — a name, match keywords, and a command line — from the manager on the Iris bar. They're persisted locally and merged into the suggestion ranking (always available, run as typed), so your repeated workflows become one fuzzy match away.
 
@@ -242,7 +246,7 @@ The Code panel includes a built-in diff mode. When activated:
 3. Changes are computed in-browser using a pure-TypeScript **LCS (Longest Common Subsequence)** diff algorithm — no external diff packages.
 4. The result renders as a git-diff-style view: green additions, red deletions, collapsed unchanged context.
 
-The diff panel also supports **Safe Edit** mode — an inline `<textarea>` backed by the Rust `write_file` command, replacing the read-only view when unlocked.
+The diff panel also supports **Safe Edit** mode — an editable overlay backed by the Rust `write_file` command that keeps Prism syntax highlighting while you type and includes in-file find & replace (see [Syntax highlighting](#syntax-highlighting)).
 
 ### Changes panel — live git diff
 
