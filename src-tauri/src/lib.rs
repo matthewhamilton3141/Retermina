@@ -8,12 +8,6 @@ mod pty;
 mod terminal_import;
 mod vscode;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -23,7 +17,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(pty::PtyManager::default())
         .invoke_handler(tauri::generate_handler![
-            greet,
             vscode::get_recent_workspaces,
             pty::create_pty_session,
             pty::write_to_pty,

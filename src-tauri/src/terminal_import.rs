@@ -76,10 +76,9 @@ fn warp_cwd() -> Option<String> {
 fn shell_fallback_cwd() -> Option<String> {
     // pgrep -n returns the newest (most recently started) matching PID.
     for shell in &["zsh", "bash", "fish"] {
-        if let Some(out) = Command::new("pgrep")
+        if let Ok(out) = Command::new("pgrep")
             .args(["-n", "-x", shell])
             .output()
-            .ok()
         {
             if let Ok(s) = String::from_utf8(out.stdout) {
                 if let Ok(pid) = s.trim().parse::<u32>() {

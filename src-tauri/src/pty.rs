@@ -203,6 +203,8 @@ pub fn resize_pty(
 pub fn close_pty(manager: tauri::State<'_, PtyManager>, session_id: String) -> Result<(), String> {
     if let Some(mut session) = manager.sessions.lock().unwrap().remove(&session_id) {
         let _ = session.child.kill();
+        // Reap the child so it doesn't linger as a zombie for the app's lifetime.
+        let _ = session.child.wait();
     }
     Ok(())
 }
