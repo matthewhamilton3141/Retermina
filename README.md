@@ -232,7 +232,7 @@ The dedicated **Loom** tab renders your saved Looms as a grid of **live preview 
 - **Graceful fallback** — every load runs through a schema validator (`parsePreset`); corrupt or partial layout data degrades to the default grid instead of crashing the window.
 - **Privacy** — a Loom captures _only_ layout geometry + panel identity and cosmetic settings. It never serializes live-session state: no PTY/terminal buffers, no working directory, no open-file paths or contents. Presets stay local by default; nothing is ever uploaded automatically or in the background — sharing to the community gallery is **explicit and opt-in** (see below).
 
-> A separate, lightweight **Presets** menu in the toolbar persists layout-only snapshots (no theme) to localStorage for quick in-session switching; it coexists with Looms.
+> Every Loom carries a **scope**: _full_ (theme + layout) or _layout-only_. The toolbar **Presets** menu is the quick entry point to the same library — it saves layout-only Looms by default (an "Include theme" toggle upgrades the capture to a full Loom) and applies any saved Loom in place. Presets saved with older versions migrate into the library automatically. Applying a Loom also sets the **layout template** for the workspace: newly opened tabs inherit the preset's arrangement instead of resetting to the default grid.
 
 #### Community gallery
 
@@ -284,7 +284,7 @@ Every folder opened in Retermina is recorded in a native localStorage history (m
 
 ### Session restore
 
-On launch Retermina reconnects to where you left off: the last workspace folder, the panel layout, and the file that was open in the Code panel (reopened by path). The panel layout (geometry + which panels are visible, with per-panel zoom) is persisted by the workspace-layout store; the cwd and the open file are persisted by a small session store. Restore is local-only and privacy-preserving in the same spirit as a Loom — it records **paths and layout, never contents**: no file bodies, no PTY/terminal scrollback, no shell history. Navigating back to the Launch Hub clears the session, so a deliberate exit lands you on the hub next launch rather than re-entering the workspace; and a remembered file from one workspace never leaks into another (the open-file pointer resets when the cwd changes).
+On launch Retermina reconnects to where you left off: the last workspace folder, the panel layout, and the file that was open in the Code panel (reopened by path). The panel layout (geometry + which panels are visible, with per-panel zoom) is persisted by the workspace-layout store; the cwd and the open file are persisted by a small session store. Layouts also persist **per folder**: closing a workspace snapshots its arrangement by cwd (the 30 most recent folders are kept), so reopening that project restores it exactly — applying a Loom clears these snapshots so a fresh preset takes effect everywhere. Restore is local-only and privacy-preserving in the same spirit as a Loom — it records **paths and layout, never contents**: no file bodies, no PTY/terminal scrollback, no shell history. Navigating back to the Launch Hub clears the session, so a deliberate exit lands you on the hub next launch rather than re-entering the workspace; and a remembered file from one workspace never leaks into another (the open-file pointer resets when the cwd changes).
 
 ### Custom title bar
 
