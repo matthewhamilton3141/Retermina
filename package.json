@@ -1,7 +1,7 @@
 {
   "name": "retermina",
   "private": true,
-  "version": "0.2.6",
+  "version": "0.2.7",
   "type": "module",
   "overrides": {
     "esbuild": "^0.28.1"
