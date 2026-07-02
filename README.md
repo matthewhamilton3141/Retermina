@@ -1,5 +1,9 @@
 # Retermina
 
+A high-utility terminal workspace built on Tauri v2 and React. Retermina replaces the traditional terminal window with a modular, themeable developer environment that runs your native shell securely inside a Rust PTY — with no cloud dependency, no token limits, and no subscription.
+
+---
+
 ## Installation (macOS)
 
 After mounting the `.dmg` and dragging Retermina to Applications, macOS may show **"Retermina is damaged and can't be opened"**. This is a Gatekeeper quarantine flag — not actual corruption. Fix it by running:
@@ -9,10 +13,6 @@ xattr -cr /Applications/Retermina.app
 ```
 
 Then open the app normally.
-
----
-
-A high-utility terminal workspace built on Tauri v2 and React. Retermina replaces the traditional terminal window with a modular, themeable developer environment that runs your native shell securely inside a Rust PTY — with no cloud dependency, no token limits, and no subscription.
 
 ---
 
