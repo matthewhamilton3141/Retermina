@@ -2,6 +2,8 @@
 
 A high-utility terminal workspace built on Tauri v2 and React. Retermina replaces the traditional terminal window with a modular, themeable developer environment that runs your native shell securely inside a Rust PTY — with no cloud dependency, no token limits, and no subscription.
 
+![Retermina Launch Hub](docs/retermina-preview.png)
+
 ---
 
 ## Installation (macOS)
