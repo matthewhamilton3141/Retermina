@@ -11,6 +11,7 @@ import { PANEL_KINDS, PANEL_META } from "../lib/workspaceLayout";
 import { useWorkspaceStore } from "../store/workspace";
 import { useWorkspacesStore } from "../store/workspaces";
 import { useAppStore } from "../store/app";
+import { useRecentStore } from "../store/recent";
 
 export interface TerminalWorkspaceProps {
   onLeave: () => void;
@@ -99,7 +100,6 @@ function WorkspaceTabs() {
   const activeId       = useWorkspacesStore((s) => s.activeId);
   const setActive      = useWorkspacesStore((s) => s.setActive);
   const closeWorkspace = useWorkspacesStore((s) => s.closeWorkspace);
-  const newWorkspace   = useWorkspacesStore((s) => s.newWorkspace);
   const moveTab        = useWorkspacesStore((s) => s.moveTab);
 
   // Drag-reorder bookkeeping + edge-fade affordance for overflowing strips.
@@ -135,12 +135,13 @@ function WorkspaceTabs() {
   const mask = fade.left || fade.right ? `linear-gradient(to right, ${maskStops})` : undefined;
 
   return (
-    <div
-      ref={stripRef}
-      onScroll={updateFade}
-      style={{ maskImage: mask, WebkitMaskImage: mask }}
-      className="rt-toolbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[var(--rt-border)] px-2 py-1"
-    >
+    <div className="rt-toolbar flex shrink-0 items-center gap-1 border-t border-[var(--rt-border)] px-2 py-1">
+      <div
+        ref={stripRef}
+        onScroll={updateFade}
+        style={{ maskImage: mask, WebkitMaskImage: mask }}
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+      >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         return (
@@ -183,14 +184,82 @@ function WorkspaceTabs() {
           </div>
         );
       })}
+      </div>
+      <NewTabMenu />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New-tab button — dropdown offering a blank workspace or a recent folder
+// ---------------------------------------------------------------------------
+
+function NewTabMenu() {
+  const newWorkspace = useWorkspacesStore((s) => s.newWorkspace);
+  const openTerminal = useAppStore((s) => s.openTerminal);
+  const recents      = useRecentStore((s) => s.entries);
+  const [open, setOpen] = useState(false);
+
+  const close = () => setOpen(false);
+
+  return (
+    <div className="relative shrink-0">
       <button
         type="button"
-        onClick={() => newWorkspace(null)}
+        onClick={() => setOpen((o) => !o)}
         title="New workspace"
-        className="rt-btn flex h-6 w-6 shrink-0 items-center justify-center"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`rt-btn flex h-6 w-6 shrink-0 items-center justify-center ${open ? "rt-btn-active" : ""}`}
       >
         <Icon name="plus" size={13} aria-label="New workspace" />
       </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={close} />
+          <div className="rt-menu absolute right-0 top-full z-50 mt-1 w-60">
+            <div className="p-1">
+              <button
+                type="button"
+                onClick={() => { newWorkspace(null); close(); }}
+                className="rt-menu-item flex w-full items-center gap-2 px-3 py-2 text-sm"
+              >
+                <Icon name="plus" size={14} className="rt-text-muted shrink-0" />
+                Blank workspace
+              </button>
+            </div>
+
+            {recents.length > 0 && (
+              <>
+                <div className="rt-divider-b mx-1" />
+                <p className="rt-text-faint px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide">
+                  Recent
+                </p>
+                <ul className="max-h-56 overflow-y-auto p-1 pt-0">
+                  {recents.map((entry) => (
+                    <li key={entry.path}>
+                      <button
+                        type="button"
+                        onClick={() => { openTerminal(entry.path); close(); }}
+                        title={entry.path}
+                        className="rt-menu-item flex w-full min-w-0 flex-col items-start px-3 py-2 text-left"
+                      >
+                        <span className="block w-full truncate text-sm font-medium">
+                          {entry.name}
+                        </span>
+                        <span className="rt-text-faint block w-full truncate text-[11px]">
+                          {prettyPath(entry.path)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

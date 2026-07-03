@@ -2,7 +2,7 @@
  * Cmd+K Command Palette
  *
  * A full-screen overlay with a fuzzy search input that surfaces actions
- * across the entire app: panel toggles, themes, Looms, and
+ * across the entire app: panel toggles, themes, workspace presets, Looms, and
  * recent workspaces. Results are keyboard-navigable; Enter runs the
  * highlighted action and closes the palette.
  */
@@ -11,7 +11,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "./Icon";
 import { useAppStore } from "../store/app";
 import { useWorkspaceStore } from "../store/workspace";
+import { useWorkspacesStore } from "../store/workspaces";
 import { useLoomStore } from "../store/loom";
+import { usePresetsStore } from "../store/presets";
 import { useRecentStore } from "../store/recent";
 import { useTheme } from "../theme/ThemeProvider";
 import { PANEL_KINDS, PANEL_META } from "../lib/workspaceLayout";
@@ -69,7 +71,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const openTerminal  = useAppStore((s) => s.openTerminal);
   const panels        = useWorkspaceStore((s) => s.panels);
   const togglePanel   = useWorkspaceStore((s) => s.togglePanel);
+  const loadLayout    = useWorkspaceStore((s) => s.loadLayout);
   const recentEntries = useRecentStore((s) => s.entries);
+  const presets       = usePresetsStore((s) => s.presets);
   const looms         = useLoomStore((s) => s.presets);
   const loadLoom      = useLoomStore((s) => s.loadPreset);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
@@ -119,12 +123,31 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       });
     }
 
-    // Looms — the unified preset library (layout-only and theme + layout)
+    // Presets — layout-only workspace snapshots
+    for (const preset of presets) {
+      actions.push({
+        id:       `preset-${preset.id}`,
+        title:    preset.name,
+        subtitle: `${preset.panels.length} panel${preset.panels.length !== 1 ? "s" : ""}`,
+        group:    "Presets",
+        icon:     "files",
+        onRun:    () => {
+          loadLayout(preset.panels, preset.grid);
+          useWorkspacesStore.getState().setLayoutTemplate({
+            panels: preset.panels,
+            grid: preset.grid,
+            panelFontSizes: {},
+          });
+        },
+      });
+    }
+
+    // Looms — full theme + layout bundles
     for (const loom of looms) {
       actions.push({
         id:       `loom-${loom.id}`,
         title:    `Apply Loom: ${loom.name}`,
-        subtitle: `${loom.scope === "layout" ? "Layout" : "Theme + layout"} · ${loom.workspace.panels.length} panel${loom.workspace.panels.length !== 1 ? "s" : ""}`,
+        subtitle: `${loom.workspace.panels.length} panel${loom.workspace.panels.length !== 1 ? "s" : ""}`,
         group:    "Looms",
         icon:     "layers",
         onRun:    () => loadLoom(loom.id),
@@ -156,7 +179,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
     return actions;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panels, looms, recentEntries, themes, themeId]);
+  }, [panels, presets, looms, recentEntries, themes, themeId]);
 
   // ── Filter + sort ───────────────────────────────────────────────────────
 

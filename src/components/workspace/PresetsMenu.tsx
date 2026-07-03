@@ -1,46 +1,57 @@
 import { useRef, useState } from "react";
 
 import Icon from "../Icon";
-import { useLoomStore } from "../../store/loom";
+import { usePresetsStore } from "../../store/presets";
+import { useWorkspaceStore } from "../../store/workspace";
+import { useWorkspacesStore } from "../../store/workspaces";
 
 /**
- * Toolbar preset picker, backed by the unified Loom library.
+ * Named workspace preset picker.
  *
- * Save — snapshots the current layout under a user-chosen name; an "include
- *        theme" toggle upgrades the capture to a full Loom (theme + layout).
- * Load  — applies a saved Loom instantly. Layout-only Looms swap panels and
- *         positions; full Looms re-skin the theme too.
- * Delete — removes a Loom with a single click on its × button.
+ * Save — snapshots the current panels + grid under a user-chosen name.
+ * Load  — applies a saved preset instantly; panels and positions swap in, and
+ *         newly opened tabs inherit the layout too (via the layout template).
+ * Delete — removes a preset with a single click on its × button.
  *
- * Duplicate names overwrite the existing Loom rather than creating a copy.
+ * Duplicate names overwrite the existing preset rather than creating a copy.
  */
 export function PresetsMenu() {
-  const presets = useLoomStore((s) => s.presets);
-  const save    = useLoomStore((s) => s.saveCurrentAsPreset);
-  const remove  = useLoomStore((s) => s.deletePreset);
-  const load    = useLoomStore((s) => s.loadPreset);
+  const presets    = usePresetsStore((s) => s.presets);
+  const save       = usePresetsStore((s) => s.save);
+  const remove     = usePresetsStore((s) => s.remove);
 
-  const [open, setOpen]             = useState(false);
-  const [saving, setSaving]         = useState(false);
-  const [name, setName]             = useState("");
-  const [includeTheme, setIncludeTheme] = useState(false);
-  const inputRef                    = useRef<HTMLInputElement>(null);
+  const panels     = useWorkspaceStore((s) => s.panels);
+  const grid       = useWorkspaceStore((s) => s.grid);
+  const loadLayout = useWorkspaceStore((s) => s.loadLayout);
+
+  const [open, setOpen]       = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [name, setName]       = useState("");
+  const inputRef              = useRef<HTMLInputElement>(null);
 
   function dismiss() {
     setOpen(false);
     setSaving(false);
     setName("");
-    setIncludeTheme(false);
   }
 
   function handleSave() {
     if (!name.trim()) return;
-    save(name, includeTheme ? "full" : "layout");
+    save(name, panels, grid);
     dismiss();
   }
 
   function handleLoad(id: string) {
-    load(id);
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    loadLayout(preset.panels, preset.grid);
+    // An applied preset should follow the user across newly opened / reopened
+    // tabs instead of snapping back to the default grid.
+    useWorkspacesStore.getState().setLayoutTemplate({
+      panels: preset.panels,
+      grid: preset.grid,
+      panelFontSizes: {},
+    });
     dismiss();
   }
 
@@ -81,10 +92,7 @@ export function PresetsMenu() {
                         {preset.name}
                       </span>
                       <span className="rt-text-faint text-[11px]">
-                        {preset.scope === "full" ? "Theme + layout" : "Layout"}
-                        {" · "}
-                        {preset.workspace.panels.length} panel
-                        {preset.workspace.panels.length !== 1 ? "s" : ""}
+                        {preset.panels.length} panel{preset.panels.length !== 1 ? "s" : ""}
                         {" · "}
                         {formatAge(preset.createdAt)}
                       </span>
@@ -110,36 +118,26 @@ export function PresetsMenu() {
             <div className="rt-divider-b mx-1 mt-0.5" />
             <div className="p-2">
               {saving ? (
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex gap-1.5">
-                    <input
-                      ref={inputRef}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSave();
-                        if (e.key === "Escape") { setSaving(false); setName(""); }
-                      }}
-                      placeholder="Preset name…"
-                      className="rt-input min-w-0 flex-1 px-2 py-1 text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSave}
-                      disabled={!name.trim()}
-                      className="rt-btn-outline px-2.5 py-1 text-xs font-medium disabled:opacity-40"
-                    >
-                      Save
-                    </button>
-                  </div>
-                  <label className="rt-text-faint flex cursor-pointer items-center gap-1.5 px-0.5 text-[11px]">
-                    <input
-                      type="checkbox"
-                      checked={includeTheme}
-                      onChange={(e) => setIncludeTheme(e.target.checked)}
-                    />
-                    Include theme (save as a full Loom)
-                  </label>
+                <div className="flex gap-1.5">
+                  <input
+                    ref={inputRef}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSave();
+                      if (e.key === "Escape") { setSaving(false); setName(""); }
+                    }}
+                    placeholder="Preset name…"
+                    className="rt-input min-w-0 flex-1 px-2 py-1 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={!name.trim()}
+                    className="rt-btn-outline px-2.5 py-1 text-xs font-medium disabled:opacity-40"
+                  >
+                    Save
+                  </button>
                 </div>
               ) : (
                 <button

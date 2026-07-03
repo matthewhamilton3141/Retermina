@@ -36,13 +36,6 @@ export const PRESET_VERSION = 1;
 /** Tag identifying a document as a Retermina Loom (sanity check on import). */
 export const PRESET_SCHEMA = "retermina-loom";
 
-/**
- * What a Loom applies. "full" re-skins the theme *and* swaps the layout;
- * "layout" swaps only the panel arrangement, leaving the theme untouched
- * (the successor to the old toolbar-only workspace presets).
- */
-export type PresetScope = "full" | "layout";
-
 /** Cosmetic half of a preset. */
 export interface PresetTheme {
   themeId: ThemeId;
@@ -92,8 +85,6 @@ export interface ReterminaPreset {
   id: string;
   name: string;
   createdAt: number;
-  /** What applying this Loom touches. Absent in v1 documents → "full". */
-  scope: PresetScope;
   theme: PresetTheme;
   workspace: PresetWorkspace;
   /** Optional bundled assets (e.g. custom fonts the theme references). */
@@ -196,7 +187,6 @@ export function parsePreset(raw: unknown): ReterminaPreset | null {
     id: typeof p.id === "string" ? p.id : crypto.randomUUID(),
     name: typeof p.name === "string" && p.name.trim() ? p.name.trim() : "Imported Loom",
     createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
-    scope: p.scope === "layout" ? "layout" : "full",
     theme: sanitizeTheme(p.theme),
     workspace: sanitizeWorkspace(p.workspace),
     ...(assets && assets.fonts.length ? { assets } : {}),
@@ -219,7 +209,6 @@ export function buildPreset(
   theme: PresetTheme,
   workspace: PresetWorkspace,
   assets?: { fonts: PresetFontAsset[] },
-  scope: PresetScope = "full",
 ): ReterminaPreset {
   return {
     schema: PRESET_SCHEMA,
@@ -227,7 +216,6 @@ export function buildPreset(
     id: crypto.randomUUID(),
     name: name.trim() || "Untitled Loom",
     createdAt: Date.now(),
-    scope,
     theme,
     workspace: {
       panels: workspace.panels,
