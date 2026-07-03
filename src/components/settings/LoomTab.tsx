@@ -132,7 +132,7 @@ export default function LoomTab() {
                     <p className="truncate text-sm font-medium">{p.name}</p>
                     <p className="rt-text-faint truncate text-[11px]">
                       {p.workspace.panels.length} panel{p.workspace.panels.length !== 1 ? "s" : ""}
-                      {" · "}{p.scope === "layout" ? "Layout only" : resolveTheme(p.theme.themeId).label}
+                      {" · "}{resolveTheme(p.theme.themeId).label}
                       {" · "}{formatAge(p.createdAt)}
                     </p>
                   </div>

@@ -47,10 +47,10 @@ polish, low urgency, fun.
 
 ## Done (shipped from this backlog)
 
-- **Unified preset system** — the toolbar workspace presets folded into the
-  Loom library as layout-scoped Looms (`scope: "full" | "layout"`); old
-  localStorage presets migrate automatically on first launch. Layout presets
-  now carry per-panel font sizes too.
+- **Separate Presets & Looms** — the toolbar **Presets** menu is a lightweight,
+  localStorage-backed store of layout-only snapshots; **Looms** remain the full
+  theme + layout bundles. (An earlier build unified the two into one library;
+  that was reverted, and any presets folded in are reverse-migrated back out.)
 - **Presets follow you across workspaces** — applying a preset sets a layout
   template that newly opened/reopened tabs inherit, instead of every new tab
   snapping back to the default grid.

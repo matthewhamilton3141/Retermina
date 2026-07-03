@@ -234,7 +234,7 @@ The dedicated **Loom** tab renders your saved Looms as a grid of **live preview 
 - **Graceful fallback** — every load runs through a schema validator (`parsePreset`); corrupt or partial layout data degrades to the default grid instead of crashing the window.
 - **Privacy** — a Loom captures _only_ layout geometry + panel identity and cosmetic settings. It never serializes live-session state: no PTY/terminal buffers, no working directory, no open-file paths or contents. Presets stay local by default; nothing is ever uploaded automatically or in the background — sharing to the community gallery is **explicit and opt-in** (see below).
 
-> Every Loom carries a **scope**: _full_ (theme + layout) or _layout-only_. The toolbar **Presets** menu is the quick entry point to the same library — it saves layout-only Looms by default (an "Include theme" toggle upgrades the capture to a full Loom) and applies any saved Loom in place. Presets saved with older versions migrate into the library automatically. Applying a Loom also sets the **layout template** for the workspace: newly opened tabs inherit the preset's arrangement instead of resetting to the default grid.
+> The toolbar **Presets** menu is a separate, lighter-weight store for **layout-only** snapshots (panels + grid, no theme), kept in localStorage. Looms are the full theme + layout bundles managed from the Loom tab. Applying either one sets the **layout template** for the workspace, so newly opened tabs inherit the arrangement instead of resetting to the default grid.
 
 #### Community gallery
 
