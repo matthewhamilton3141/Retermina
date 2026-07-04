@@ -292,7 +292,7 @@ export function TerminalWorkspace({ onLeave }: TerminalWorkspaceProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <header className="rt-toolbar relative z-50 flex items-center gap-2 px-3 py-2">
+      <header className="rt-toolbar relative z-[60] flex items-center gap-2 px-3 py-2">
         {/* Left: back + title */}
         <button
           type="button"
