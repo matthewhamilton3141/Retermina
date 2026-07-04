@@ -10,10 +10,9 @@
  * During drag, RGL renders its own .react-grid-placeholder at the correct
  * drop position. No custom pixel-positioned overlay is needed or used.
  *
- * Collision resolution (handleDragStop) runs after every drop:
- *   1. Resize  — shrink the displaced panel along the overlapping edge.
- *   2. Swap    — move it to the drag origin if resize isn't possible.
- *   3. Abort   — snap the dragged panel back if neither is valid.
+ * Collision resolution on drop lives in lib/gridCollision (resolveDrop):
+ * swap → resize → relocate → abort, always validated against the whole
+ * layout before committing.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { noCompactor, type Layout, type LayoutItem } from "react-grid-layout";
@@ -23,6 +22,7 @@ import "react-resizable/css/styles.css";
 import PanelFrame from "./PanelFrame";
 import { PANEL_RENDERERS } from "./panels";
 import { useWorkspacesStore } from "../../store/workspaces";
+import { clampToGrid, resolveDrop } from "../../lib/gridCollision";
 import {
   GRID_COLS,
   GRID_MARGIN,
@@ -52,54 +52,6 @@ interface ElementSize {
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-function isInBounds(item: { w: number; h: number }, x: number, y: number): boolean {
-  return x >= 0 && y >= 0 && x + item.w <= GRID_COLS && y + item.h <= GRID_ROWS;
-}
-
-/**
- * Try to shrink `displaced` so it no longer overlaps `priority`.
- * Generates one candidate per overlapping edge, returns the one that
- * preserves the most area, or null if every direction violates minW/minH.
- */
-function tryResizeToFit(
-  displaced: LayoutItem,
-  priority: LayoutItem,
-): LayoutItem | null {
-  const minW = displaced.minW ?? 1;
-  const minH = displaced.minH ?? 1;
-  const candidates: LayoutItem[] = [];
-
-  if (displaced.x < priority.x && displaced.x + displaced.w > priority.x) {
-    const newW = priority.x - displaced.x;
-    if (newW >= minW) candidates.push({ ...displaced, w: newW });
-  }
-  if (
-    displaced.x < priority.x + priority.w &&
-    displaced.x + displaced.w > priority.x + priority.w
-  ) {
-    const newX = priority.x + priority.w;
-    const newW = displaced.x + displaced.w - newX;
-    if (newW >= minW && newX + newW <= GRID_COLS)
-      candidates.push({ ...displaced, x: newX, w: newW });
-  }
-  if (displaced.y < priority.y && displaced.y + displaced.h > priority.y) {
-    const newH = priority.y - displaced.y;
-    if (newH >= minH) candidates.push({ ...displaced, h: newH });
-  }
-  if (
-    displaced.y < priority.y + priority.h &&
-    displaced.y + displaced.h > priority.y + priority.h
-  ) {
-    const newY = priority.y + priority.h;
-    const newH = displaced.y + displaced.h - newY;
-    if (newH >= minH && newY + newH <= GRID_ROWS)
-      candidates.push({ ...displaced, y: newY, h: newH });
-  }
-
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, c) => (c.w * c.h > best.w * best.h ? c : best));
-}
 
 function useElementSize() {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -171,87 +123,44 @@ export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutPro
   // Snapshot the full layout when a drag begins so handleDragStop can
   // identify displaced panels by their pre-drag positions.
   const preDragRef = useRef<Layout>([]);
-
-  const clamp = useCallback(
-    (item: LayoutItem): LayoutItem => ({
-      ...item,
-      x: Math.max(0, Math.min(item.x, GRID_COLS - item.w)),
-      y: Math.max(0, Math.min(item.y, GRID_ROWS - item.h)),
-    }),
-    [],
-  );
+  // While a drag is in flight (and for one frame after the drop commits),
+  // onLayoutChange must not write RGL's internal layout into the store — it
+  // fires after onDragStop and would clobber the drop resolution with the
+  // unresolved (possibly overlapping) positions.
+  const dragActiveRef = useRef(false);
 
   const handleDragStart = useCallback((layout: Layout) => {
+    dragActiveRef.current = true;
     preDragRef.current = [...layout];
   }, []);
 
   /**
-   * Collision resolution on drop.
-   *
-   * RGL with noCompactor leaves displaced panels where they end up after its
-   * internal collision pass (which can push them outside maxRows). We intercept
-   * here and apply: resize → swap → abort, using the pre-drag snapshot so the
-   * correct panel is identified regardless of where RGL moved it.
+   * Collision resolution on drop — delegated to resolveDrop (swap → resize →
+   * relocate → abort). RGL with noCompactor leaves displaced panels where its
+   * internal collision pass shoved them (possibly outside maxRows), so the
+   * result is always rebuilt from the pre-drag snapshot; a null resolution
+   * restores that snapshot wholesale, snapping the drag back.
    */
   const handleDragStop = useCallback(
     (_layout: Layout, oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
-      if (!oldItem || !newItem) return;
-
+      if (!oldItem || !newItem) {
+        dragActiveRef.current = false;
+        return;
+      }
       const pre = preDragRef.current;
-
-      const displaced = pre.filter(
-        (item) =>
-          item.i !== newItem.i &&
-          newItem.x < item.x + item.w &&
-          newItem.x + newItem.w > item.x &&
-          newItem.y < item.y + item.h &&
-          newItem.y + newItem.h > item.y,
-      );
-
-      if (displaced.length === 0) {
-        setGrid(_layout.map(clamp));
-        return;
-      }
-
-      const resolutions = new Map<string, LayoutItem>();
-      let abort = false;
-
-      for (const d of displaced) {
-        const orig = pre.find((p) => p.i === d.i) ?? d;
-
-        const resized = tryResizeToFit(orig, newItem);
-        if (resized) { resolutions.set(d.i, clamp(resized)); continue; }
-
-        if (isInBounds(orig, oldItem.x, oldItem.y)) {
-          resolutions.set(d.i, clamp({ ...orig, x: oldItem.x, y: oldItem.y }));
-          continue;
-        }
-
-        abort = true;
-        break;
-      }
-
-      if (abort) {
-        setGrid(
-          _layout.map((item) =>
-            item.i === newItem.i
-              ? clamp({ ...item, x: oldItem.x, y: oldItem.y })
-              : clamp(item),
-          ),
-        );
-        return;
-      }
-
-      setGrid(
-        _layout.map((item) => resolutions.get(item.i) ?? clamp(item)),
-      );
+      setGrid(resolveDrop(pre, oldItem, newItem) ?? pre.map(clampToGrid));
+      // Lift the suppression only after RGL's post-drop onLayoutChange burst.
+      requestAnimationFrame(() => { dragActiveRef.current = false; });
     },
-    [setGrid, clamp],
+    [setGrid],
   );
 
   const handleLayoutChange = useCallback(
-    (next: Layout) => setGrid(next.map(clamp)),
-    [setGrid, clamp],
+    (next: Layout) => {
+      if (dragActiveRef.current) return;
+      setGrid(next.map(clampToGrid));
+    },
+    [setGrid],
   );
 
   // Memoized children — never rebuilt on drag/resize so live terminals

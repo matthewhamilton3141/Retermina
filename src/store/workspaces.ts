@@ -16,9 +16,11 @@ import { persist } from "zustand/middleware";
 
 import { prettyPath } from "../lib/format";
 import { useToastStore } from "./toast";
+import { rectsOverlap } from "../lib/gridCollision";
 import {
   DEFAULT_PANEL_SIZE,
   GRID_COLS,
+  GRID_ROWS,
   PANEL_IDS,
   PANEL_META,
   createDefaultWorkspaceLayout,
@@ -44,6 +46,13 @@ export interface WorkspaceTab {
   grid: WorkspaceGridItem[];
   /** Per-panel font size as a percentage (70–150, default 100). */
   panelFontSizes: Record<string, number>;
+  /**
+   * Grid rects of panels that were hidden/closed, keyed by panel id. When a
+   * panel is toggled back on it returns to its remembered spot — if that spot
+   * is still free — instead of being re-placed from scratch. Optional because
+   * tabs persisted before this field existed lack it.
+   */
+  closedSlots?: Record<string, WorkspaceGridItem>;
 }
 
 /**
@@ -142,10 +151,31 @@ function patch(
   return tabs.map((tab) => (tab.id === id ? fn(tab) : tab));
 }
 
+/** Remember a hidden/closed panel's rect so a re-toggle can restore it. */
+function rememberSlot(
+  tab: WorkspaceTab,
+  panelId: string,
+): Record<string, WorkspaceGridItem> {
+  const item = tab.grid.find((g) => g.i === panelId);
+  if (!item) return tab.closedSlots ?? {};
+  return { ...tab.closedSlots, [panelId]: sanitizeGridItem(item) };
+}
+
+/** Is `slot` fully on the grid and clear of every current panel? */
+function slotIsFree(grid: readonly WorkspaceGridItem[], slot: WorkspaceGridItem): boolean {
+  return (
+    slot.x >= 0 &&
+    slot.y >= 0 &&
+    slot.x + slot.w <= GRID_COLS &&
+    slot.y + slot.h <= GRID_ROWS &&
+    !grid.some((item) => rectsOverlap(item, slot))
+  );
+}
+
 /** Toggle a built-in singleton panel within one tab's layout. */
 function togglePanelInTab(
   tab: WorkspaceTab,
-): (kind: PanelKind) => Pick<WorkspaceTab, "panels" | "grid"> {
+): (kind: PanelKind) => Pick<WorkspaceTab, "panels" | "grid" | "closedSlots"> {
   return (kind) => {
     const id = PANEL_IDS[kind];
     const isVisible = tab.panels.some((p) => p.id === id);
@@ -154,10 +184,23 @@ function togglePanelInTab(
       return {
         panels: tab.panels.filter((p) => p.id !== id),
         grid: tab.grid.filter((item) => item.i !== id),
+        closedSlots: rememberSlot(tab, id),
       };
     }
 
-    // Showing: prefer a genuinely free slot; otherwise share the natural column.
+    const panels = [...tab.panels, { id, kind, title: PANEL_META[kind].label }];
+    const closedSlots = { ...tab.closedSlots };
+
+    // Showing, in order of preference:
+    //   1. The panel's remembered slot, if it's still free.
+    //   2. Any genuinely free slot at the panel's default size.
+    //   3. Share the panel's natural column (occupants shrink to make room).
+    const remembered = closedSlots[id];
+    delete closedSlots[id];
+    if (remembered && slotIsFree(tab.grid, remembered)) {
+      return { panels, grid: [...tab.grid, { ...remembered, i: id }], closedSlots };
+    }
+
     const size = DEFAULT_PANEL_SIZE[kind];
     const w = Math.min(size.w, GRID_COLS);
     const h = size.h;
@@ -177,10 +220,7 @@ function togglePanelInTab(
           { i: id, x: slot.x, y: slot.y, w, h, minW: size.minW, minH: size.minH },
         ];
 
-    return {
-      panels: [...tab.panels, { id, kind, title: PANEL_META[kind].label }],
-      grid,
-    };
+    return { panels, grid, closedSlots };
   };
 }
 
@@ -341,6 +381,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               ...t,
               panels: t.panels.filter((p) => p.id !== panelId),
               grid: t.grid.filter((item) => item.i !== panelId),
+              closedSlots: rememberSlot(t, panelId),
             })),
           })),
 
@@ -352,7 +393,8 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           set((s) => ({
             tabs: patch(s.tabs, id, (t) => {
               const fresh = createDefaultWorkspaceLayout();
-              return { ...t, panels: fresh.panels, grid: fresh.grid };
+              // A reset is a fresh start — drop remembered slots too.
+              return { ...t, panels: fresh.panels, grid: fresh.grid, closedSlots: {} };
             }),
           }));
           useToastStore.getState().push({
@@ -371,6 +413,8 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               panels,
               grid: grid.map(sanitizeGridItem),
               panelFontSizes: panelFontSizes ?? t.panelFontSizes,
+              // A preset/Loom replaces the arrangement — old slots are moot.
+              closedSlots: {},
             })),
           })),
 
@@ -445,6 +489,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           panels: t.panels,
           grid: t.grid.map(sanitizeGridItem),
           panelFontSizes: t.panelFontSizes,
+          closedSlots: t.closedSlots ?? {},
         })),
         activeId: state.activeId,
         layoutTemplate: state.layoutTemplate,
@@ -454,13 +499,25 @@ export const useWorkspacesStore = create<WorkspacesState>()(
       merge: (persisted, current) => {
         const data = persisted as Partial<WorkspacesState> | undefined;
         const tabs = Array.isArray(data?.tabs) ? data!.tabs : [];
-        const valid = tabs.filter(
-          (t): t is WorkspaceTab =>
-            !!t &&
-            typeof t.id === "string" &&
-            isWorkspacePanelArray(t.panels) &&
-            isWorkspaceGridArray(t.grid),
-        );
+        const valid = tabs
+          .filter(
+            (t): t is WorkspaceTab =>
+              !!t &&
+              typeof t.id === "string" &&
+              isWorkspacePanelArray(t.panels) &&
+              isWorkspaceGridArray(t.grid),
+          )
+          // Normalize closedSlots: keep only well-formed rects (old persisted
+          // tabs predate the field entirely).
+          .map((t) => {
+            const slots: Record<string, WorkspaceGridItem> = {};
+            if (t.closedSlots && typeof t.closedSlots === "object") {
+              for (const [pid, slot] of Object.entries(t.closedSlots)) {
+                if (isWorkspaceGridArray([slot])) slots[pid] = sanitizeGridItem(slot);
+              }
+            }
+            return { ...t, closedSlots: slots };
+          });
         const template =
           data?.layoutTemplate &&
           isWorkspacePanelArray(data.layoutTemplate.panels) &&

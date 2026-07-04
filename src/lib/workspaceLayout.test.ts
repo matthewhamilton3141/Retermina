@@ -77,6 +77,17 @@ describe("reconcileWorkspaceLayout", () => {
 });
 
 describe("fitIntoColumn", () => {
+  /** True when no two items in the grid overlap. */
+  function noOverlaps(grid: WorkspaceGridItem[]): boolean {
+    for (let a = 0; a < grid.length; a++)
+      for (let b = a + 1; b < grid.length; b++) {
+        const p = grid[a], q = grid[b];
+        if (p.x < q.x + q.w && p.x + p.w > q.x && p.y < q.y + q.h && p.y + p.h > q.y)
+          return false;
+      }
+    return true;
+  }
+
   it("places a new panel in its kind's preferred column", () => {
     const out = fitIntoColumn([], "term-1", "terminal");
     const item = out.find((g) => g.i === "term-1")!;
@@ -89,9 +100,46 @@ describe("fitIntoColumn", () => {
     const out = fitIntoColumn(first, "term-2", "terminal");
     const col = out.filter((g) => g.x === PANEL_COLUMN.terminal.x);
     expect(col.length).toBe(2);
-    // Stacked top-to-bottom, filling the column without exceeding it.
     const bottom = Math.max(...col.map((g) => g.y + g.h));
     expect(bottom).toBeLessThanOrEqual(GRID_ROWS);
     expect(col.every((g) => g.w === PANEL_COLUMN.terminal.w)).toBe(true);
+  });
+
+  it("fills the column exactly, spreading remainder rows to the top panels", () => {
+    // Three panels in a 10-row column → 4 + 3 + 3.
+    let grid = fitIntoColumn([], "a", "fileExplorer");
+    grid = fitIntoColumn(grid, "b", "localhost");
+    grid = fitIntoColumn(grid, "c", "tasks"); // all three prefer the left column
+    const col = grid.filter((g) => g.x === PANEL_COLUMN.fileExplorer.x).sort((p, q) => p.y - q.y);
+    expect(col.map((g) => g.h)).toEqual([4, 3, 3]);
+    expect(col.map((g) => g.y)).toEqual([0, 4, 7]);
+    expect(noOverlaps(grid)).toBe(true);
+  });
+
+  it("respects each existing panel's own minH, not the new panel's", () => {
+    const tall: WorkspaceGridItem = { i: "big", x: 3, y: 0, w: 5, h: 10, minH: 6, minW: 3 };
+    const out = fitIntoColumn([tall], "cv", "codeView");
+    const big = out.find((g) => g.i === "big")!;
+    expect(big.h).toBeGreaterThanOrEqual(6);
+    // New panel takes what's left, still inside the grid.
+    const cv = out.find((g) => g.i === "cv")!;
+    expect(cv.y + cv.h).toBeLessThanOrEqual(GRID_ROWS);
+    expect(noOverlaps(out)).toBe(true);
+  });
+
+  it("never places a panel off-grid, even in a crowded column", () => {
+    // Five panels of minH 2 fill 10 rows exactly; a sixth cannot fit legally.
+    let grid: WorkspaceGridItem[] = [];
+    for (let i = 0; i < 6; i++) grid = fitIntoColumn(grid, `t-${i}`, "fileExplorer");
+    for (const item of grid) {
+      expect(item.y).toBeGreaterThanOrEqual(0);
+      expect(item.y + item.h).toBeLessThanOrEqual(GRID_ROWS);
+    }
+  });
+
+  it("leaves panels outside the target column untouched", () => {
+    const outside: WorkspaceGridItem = { i: "code", x: 3, y: 0, w: 5, h: 10 };
+    const out = fitIntoColumn([outside], "term-1", "terminal");
+    expect(out.find((g) => g.i === "code")).toEqual(outside);
   });
 });

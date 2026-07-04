@@ -223,32 +223,45 @@ export function fitIntoColumn(
     .filter((item) => item.x >= col.x && item.x < col.x + col.w && item.i !== newId)
     .sort((a, b) => a.y - b.y);
 
-  const totalPanels = inColumn.length + 1;
-  const hEach = Math.max(size.minH, Math.floor(GRID_ROWS / totalPanels));
-  // The last slot gets whatever rows remain so the column is fully filled.
-  const hLast = Math.max(size.minH, GRID_ROWS - hEach * (totalPanels - 1));
+  // The stack to lay out: existing panels keep their order, new panel last.
+  // Each slot tracks its own minH (existing panels keep theirs).
+  const minHs = [...inColumn.map((item) => item.minH ?? 1), size.minH];
+  const n = minHs.length;
 
-  const resized: WorkspaceGridItem[] = inColumn.map((item, idx) => ({
-    ...item,
-    x: col.x,
-    w: col.w,
-    y: idx * hEach,
-    h: idx === inColumn.length - 1 && totalPanels > 1 ? hEach : hEach,
-  }));
+  // Even split of the column; the remainder rows go to the topmost panels.
+  const base = Math.floor(GRID_ROWS / n);
+  const rem = GRID_ROWS % n;
+  const heights = minHs.map((minH, idx) => Math.max(minH, base + (idx < rem ? 1 : 0)));
 
-  const newItem: WorkspaceGridItem = {
-    i: newId,
-    x: col.x,
-    y: inColumn.length * hEach,
-    w: col.w,
-    h: hLast,
-    minW: size.minW,
-    minH: size.minH,
-  };
+  // If minH clamps pushed the total past GRID_ROWS, steal rows back from
+  // slots that still have slack, bottom-up.
+  let total = heights.reduce((sum, h) => sum + h, 0);
+  for (let idx = n - 1; idx >= 0 && total > GRID_ROWS; idx--) {
+    const take = Math.min(heights[idx] - minHs[idx], total - GRID_ROWS);
+    heights[idx] -= take;
+    total -= take;
+  }
+
+  // Stack top-to-bottom. If sum(minH) genuinely exceeds GRID_ROWS the column
+  // cannot host everyone at legal sizes — clamp each y into the grid so the
+  // worst case is a visible overlap at the bottom, never an off-grid panel.
+  let y = 0;
+  const out: WorkspaceGridItem[] = [];
+  for (let idx = 0; idx < n; idx++) {
+    const h = heights[idx];
+    const yPos = Math.min(y, Math.max(0, GRID_ROWS - h));
+    const item = inColumn[idx];
+    out.push(
+      item
+        ? { ...item, x: col.x, w: col.w, y: yPos, h }
+        : { i: newId, x: col.x, y: yPos, w: col.w, h, minW: size.minW, minH: size.minH },
+    );
+    y = yPos + h;
+  }
 
   // Replace old column items with resized versions, append the new panel.
   const colIds = new Set(inColumn.map((item) => item.i));
-  return [...grid.filter((item) => !colIds.has(item.i)), ...resized, newItem];
+  return [...grid.filter((item) => !colIds.has(item.i)), ...out];
 }
 
 /**
