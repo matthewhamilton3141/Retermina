@@ -135,12 +135,12 @@ function WorkspaceTabs() {
   const mask = fade.left || fade.right ? `linear-gradient(to right, ${maskStops})` : undefined;
 
   return (
-    <div className="rt-toolbar flex shrink-0 items-center gap-1 border-t border-[var(--rt-border)] px-2 py-1">
+    <div className="rt-toolbar relative z-50 flex shrink-0 items-center gap-1 border-t border-[var(--rt-border)] px-2 py-1">
       <div
         ref={stripRef}
         onScroll={updateFade}
         style={{ maskImage: mask, WebkitMaskImage: mask }}
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        className="flex min-w-0 items-center gap-1 overflow-x-auto"
       >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
@@ -218,7 +218,7 @@ function NewTabMenu() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={close} />
-          <div className="rt-menu absolute right-0 top-full z-50 mt-1 w-60">
+          <div className="rt-menu absolute left-0 top-full z-50 mt-1 w-60">
             <div className="p-1">
               <button
                 type="button"
