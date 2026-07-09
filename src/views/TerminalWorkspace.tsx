@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 
+import ConfirmDialog from "../components/ConfirmDialog";
 import Icon from "../components/Icon";
 import SettingsModal from "../components/SettingsModal";
 import CommandMenu from "../components/workspace/CommandMenu";
@@ -108,6 +109,14 @@ function WorkspaceTabs() {
   const stripRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ left: false, right: false });
 
+  // Closing a workspace tears down its live terminals, so guard it behind a
+  // confirmation prompt. `pendingClose` holds the tab awaiting confirmation.
+  const [pendingClose, setPendingClose] = useState<{ id: string; title: string } | null>(null);
+  const requestClose = useCallback(
+    (id: string, title: string) => setPendingClose({ id, title }),
+    [],
+  );
+
   const updateFade = useCallback(() => {
     const el = stripRef.current;
     if (!el) return;
@@ -162,7 +171,7 @@ function WorkspaceTabs() {
             onDragEnd={() => { dragId.current = null; setDragOverId(null); }}
             onMouseDown={() => setActive(tab.id)}
             // Middle-click closes the tab, matching browser/editor convention.
-            onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeWorkspace(tab.id); } }}
+            onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); requestClose(tab.id, tab.title); } }}
             title={tab.cwd ?? "Blank Terminal"}
             className={`group/tab flex max-w-[200px] shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
               active ? "rt-btn-active" : "rt-btn-outline"
@@ -174,7 +183,7 @@ function WorkspaceTabs() {
               type="button"
               onMouseDown={(e) => {
                 e.stopPropagation();
-                closeWorkspace(tab.id);
+                requestClose(tab.id, tab.title);
               }}
               title="Close workspace"
               className="rt-btn ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/tab:opacity-100"
@@ -186,6 +195,25 @@ function WorkspaceTabs() {
       })}
       </div>
       <NewTabMenu />
+
+      <ConfirmDialog
+        open={pendingClose !== null}
+        title="Close workspace?"
+        message={
+          <>
+            “{pendingClose?.title}” has a live terminal session. Closing it will
+            end any running processes in this tab.
+          </>
+        }
+        confirmLabel="Close workspace"
+        cancelLabel="Keep open"
+        destructive
+        onConfirm={() => {
+          if (pendingClose) closeWorkspace(pendingClose.id);
+          setPendingClose(null);
+        }}
+        onCancel={() => setPendingClose(null)}
+      />
     </div>
   );
 }
