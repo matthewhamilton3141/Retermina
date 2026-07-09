@@ -5,6 +5,7 @@
  * otherwise.
  */
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import Icon from "./Icon";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -49,7 +50,9 @@ export default function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  // Portal to <body> so the modal escapes any ancestor stacking context (e.g.
+  // the tab strip's `z-50`) and always paints above every toolbar and panel.
+  return createPortal(
     <div
       className="fixed inset-0 z-[220] flex items-center justify-center p-6"
       style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
@@ -97,6 +100,7 @@ export default function ConfirmDialog({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

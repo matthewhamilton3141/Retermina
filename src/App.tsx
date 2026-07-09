@@ -75,8 +75,10 @@ function App() {
         }
         case "new-tab": useWorkspacesStore.getState().newWorkspace(null); break;
         case "close-tab": {
-          const { activeId, closeWorkspace } = useWorkspacesStore.getState();
-          if (activeId) closeWorkspace(activeId);
+          // Route through the confirmation dialog, same as the tab close
+          // button — closing tears down the tab's live PTYs.
+          const { activeId, requestCloseWorkspace } = useWorkspacesStore.getState();
+          if (activeId) requestCloseWorkspace(activeId);
           break;
         }
         case "next-tab":

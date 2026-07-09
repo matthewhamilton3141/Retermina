@@ -10,6 +10,7 @@
 - Windowing: The app space is scroll-locked (overflow: hidden). Widgets must occupy a fixed-canvas layout.
 - Styling: Transparent Glass theme must use `backdrop-filter: blur(20px)` and subtle `rgba(255, 255, 255, 0.1)` borders.
 - Code Style: All new components must be functional, typed with TypeScript, and use Zustand for persistence.
+- Overlays: Anything that pops up or is a click-triggered menu (menus, dropdowns, popovers, confirmation dialogs, modals, tooltips) must overlay everything else and never be covered by tab bars, toolbars, or other top bars.
 
 ## Workflow
 - Always verify type safety before applying changes.

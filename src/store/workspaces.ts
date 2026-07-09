@@ -93,6 +93,16 @@ interface WorkspacesState {
   openWorkspace: (cwd?: string | null) => string;
   /** Always create a fresh tab (used by the "+" new-tab button). Returns its id. */
   newWorkspace: (cwd?: string | null) => string;
+  /**
+   * Id of the tab whose close is awaiting confirmation, or null. Transient —
+   * never persisted. Both the tab close button and the ⌘W shortcut set this so
+   * every close path goes through the same confirmation dialog.
+   */
+  pendingCloseId: string | null;
+  /** Ask to close a tab; surfaces the confirmation dialog. No-op if unknown. */
+  requestCloseWorkspace: (id: string) => void;
+  /** Dismiss the close-confirmation prompt without closing anything. */
+  cancelCloseWorkspace: () => void;
   closeWorkspace: (id: string) => void;
   setActive: (id: string) => void;
   /** Reorder: move the tab `fromId` to the current position of `toId`. */
@@ -295,6 +305,14 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           return tab.id;
         },
 
+        pendingCloseId: null,
+
+        requestCloseWorkspace: (id) => {
+          if (get().tabs.some((t) => t.id === id)) set({ pendingCloseId: id });
+        },
+
+        cancelCloseWorkspace: () => set({ pendingCloseId: null }),
+
         closeWorkspace: (id) => {
           const state = get();
           const idx = state.tabs.findIndex((t) => t.id === id);
@@ -307,6 +325,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
 
           set((s) => {
             const tabs = s.tabs.filter((t) => t.id !== id);
+            const pendingCloseId = s.pendingCloseId === id ? null : s.pendingCloseId;
             let activeId = s.activeId;
             if (s.activeId === id) {
               const neighbour = tabs[idx] ?? tabs[idx - 1] ?? tabs[0] ?? null;
@@ -335,7 +354,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
                 }
               }
             }
-            return { tabs, activeId, folderLayouts };
+            return { tabs, activeId, folderLayouts, pendingCloseId };
           });
 
           if (!wasLast) {

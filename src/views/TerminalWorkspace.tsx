@@ -103,19 +103,18 @@ function WorkspaceTabs() {
   const closeWorkspace = useWorkspacesStore((s) => s.closeWorkspace);
   const moveTab        = useWorkspacesStore((s) => s.moveTab);
 
+  // Every close path (button, middle-click, ⌘W) funnels through this shared
+  // store state so the confirmation dialog always shows.
+  const pendingCloseId        = useWorkspacesStore((s) => s.pendingCloseId);
+  const requestClose          = useWorkspacesStore((s) => s.requestCloseWorkspace);
+  const cancelClose           = useWorkspacesStore((s) => s.cancelCloseWorkspace);
+  const pendingTab            = tabs.find((t) => t.id === pendingCloseId) ?? null;
+
   // Drag-reorder bookkeeping + edge-fade affordance for overflowing strips.
   const dragId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ left: false, right: false });
-
-  // Closing a workspace tears down its live terminals, so guard it behind a
-  // confirmation prompt. `pendingClose` holds the tab awaiting confirmation.
-  const [pendingClose, setPendingClose] = useState<{ id: string; title: string } | null>(null);
-  const requestClose = useCallback(
-    (id: string, title: string) => setPendingClose({ id, title }),
-    [],
-  );
 
   const updateFade = useCallback(() => {
     const el = stripRef.current;
@@ -171,7 +170,7 @@ function WorkspaceTabs() {
             onDragEnd={() => { dragId.current = null; setDragOverId(null); }}
             onMouseDown={() => setActive(tab.id)}
             // Middle-click closes the tab, matching browser/editor convention.
-            onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); requestClose(tab.id, tab.title); } }}
+            onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); requestClose(tab.id); } }}
             title={tab.cwd ?? "Blank Terminal"}
             className={`group/tab flex max-w-[200px] shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
               active ? "rt-btn-active" : "rt-btn-outline"
@@ -183,7 +182,7 @@ function WorkspaceTabs() {
               type="button"
               onMouseDown={(e) => {
                 e.stopPropagation();
-                requestClose(tab.id, tab.title);
+                requestClose(tab.id);
               }}
               title="Close workspace"
               className="rt-btn ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/tab:opacity-100"
@@ -197,11 +196,11 @@ function WorkspaceTabs() {
       <NewTabMenu />
 
       <ConfirmDialog
-        open={pendingClose !== null}
+        open={pendingTab !== null}
         title="Close workspace?"
         message={
           <>
-            “{pendingClose?.title}” has a live terminal session. Closing it will
+            “{pendingTab?.title}” has a live terminal session. Closing it will
             end any running processes in this tab.
           </>
         }
@@ -209,10 +208,10 @@ function WorkspaceTabs() {
         cancelLabel="Keep open"
         destructive
         onConfirm={() => {
-          if (pendingClose) closeWorkspace(pendingClose.id);
-          setPendingClose(null);
+          if (pendingCloseId) closeWorkspace(pendingCloseId);
+          cancelClose();
         }}
-        onCancel={() => setPendingClose(null)}
+        onCancel={cancelClose}
       />
     </div>
   );
