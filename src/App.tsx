@@ -25,6 +25,19 @@ function App() {
   const workspaceCwd  = useWorkspacesStore(
     (s) => s.tabs.find((t) => t.id === s.activeId)?.cwd ?? null,
   );
+  const hasTabs       = useWorkspacesStore((s) => s.tabs.length > 0);
+
+  // Keep the workspace view mounted (just hidden) while on the Launch Hub, so a
+  // trip back to the hub — e.g. to open another folder — doesn't unmount every
+  // tab and tear down its live terminals, only to respawn them on return.
+  // Latched per session so a fresh launch on the hub still spawns nothing until
+  // the user actually enters a workspace; drops once no tabs remain to preserve.
+  const [enteredWorkspace, setEnteredWorkspace] = useState(view === "workspace");
+  useEffect(() => {
+    if (view === "workspace") setEnteredWorkspace(true);
+    else if (!hasTabs) setEnteredWorkspace(false);
+  }, [view, hasTabs]);
+  const keepWorkspaceMounted = view === "workspace" || (enteredWorkspace && hasTabs);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
@@ -129,11 +142,26 @@ function App() {
     <ThemeProvider>
       <div className="rt-app flex h-screen flex-col overflow-hidden">
         <TitleBar />
-        <div className="flex-1 min-h-0">
-          {view === "workspace" ? (
-            <TerminalWorkspace onLeave={goToLaunch} />
-          ) : (
-            <LaunchHub />
+        <div className="relative flex-1 min-h-0">
+          {/* Workspace stays mounted across a Launch Hub visit so live terminals
+              survive; hidden (not unmounted) when the hub is showing. */}
+          {keepWorkspaceMounted && (
+            <div
+              className="absolute inset-0"
+              style={{
+                visibility: view === "workspace" ? "visible" : "hidden",
+                zIndex: view === "workspace" ? 1 : 0,
+                pointerEvents: view === "workspace" ? "auto" : "none",
+              }}
+              aria-hidden={view !== "workspace"}
+            >
+              <TerminalWorkspace onLeave={goToLaunch} />
+            </div>
+          )}
+          {view !== "workspace" && (
+            <div className="absolute inset-0 z-[2]">
+              <LaunchHub />
+            </div>
           )}
         </div>
       </div>
