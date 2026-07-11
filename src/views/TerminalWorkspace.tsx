@@ -6,6 +6,8 @@ import SettingsModal from "../components/SettingsModal";
 import CommandMenu from "../components/workspace/CommandMenu";
 import IrisBar from "../components/workspace/IrisBar";
 import PresetsMenu from "../components/workspace/PresetsMenu";
+import ScheduleMenu from "../components/workspace/ScheduleMenu";
+import ScheduledPromptRunner from "../components/workspace/ScheduledPromptRunner";
 import WorkspaceLayout from "../components/workspace/WorkspaceLayout";
 import { prettyPath } from "../lib/format";
 import { PANEL_KINDS, PANEL_META } from "../lib/workspaceLayout";
@@ -377,6 +379,8 @@ export function TerminalWorkspace({ onLeave }: TerminalWorkspaceProps) {
           <div className="rt-divider mx-1 h-5 w-px" />
           <CommandMenu cwd={cwd} />
           <div className="rt-divider mx-1 h-5 w-px" />
+          <ScheduleMenu showLabel={showLabels} />
+          <div className="rt-divider mx-1 h-5 w-px" />
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
@@ -416,6 +420,8 @@ export function TerminalWorkspace({ onLeave }: TerminalWorkspaceProps) {
       </div>
 
       <IrisBar cwd={cwd} />
+
+      <ScheduledPromptRunner />
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
