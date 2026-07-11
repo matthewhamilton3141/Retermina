@@ -77,6 +77,11 @@ export interface WorkspaceLayoutTemplate {
 /** A remembered per-folder layout, stamped so the map can evict oldest-first. */
 interface FolderLayout extends WorkspaceLayoutTemplate {
   updatedAt: number;
+  /**
+   * Which panel was maximized into focus mode when the folder's tab closed, so
+   * reopening the folder restores focus too (not just the tiled arrangement).
+   */
+  focusedId?: string | null;
 }
 
 /** How many closed folders' layouts we remember before evicting the oldest. */
@@ -159,6 +164,30 @@ function makeTab(cwd: string | null, template?: WorkspaceLayoutTemplate | null):
     grid: layout.grid.map(sanitizeGridItem),
     panelFontSizes: layout.panelFontSizes,
   };
+}
+
+/**
+ * Is `tab` an untouched placeholder blank terminal — a null-cwd tab still on the
+ * pristine default layout, with no focus/font/closed-slot state? Such a tab was
+ * never really used; opening a real folder consumes it instead of leaving it to
+ * ride along, mount, and spawn a shell that demands broad folder permissions.
+ */
+function isDisposableBlank(tab: WorkspaceTab): boolean {
+  if (tab.cwd !== null) return false;
+  if (tab.focusedId) return false;
+  if (tab.closedSlots && Object.keys(tab.closedSlots).length > 0) return false;
+  if (tab.panelFontSizes && Object.keys(tab.panelFontSizes).length > 0) return false;
+  const def = createDefaultWorkspaceLayout();
+  const samePanels =
+    tab.panels.length === def.panels.length &&
+    def.panels.every((p, i) => tab.panels[i]?.id === p.id && tab.panels[i]?.kind === p.kind);
+  const sameGrid =
+    tab.grid.length === def.grid.length &&
+    def.grid.every((g) => {
+      const cur = tab.grid.find((x) => x.i === g.i);
+      return !!cur && cur.x === g.x && cur.y === g.y && cur.w === g.w && cur.h === g.h;
+    });
+  return samePanels && sameGrid;
 }
 
 /** Immutably replace the tab with `id`, applying `fn` to it. */
@@ -273,9 +302,13 @@ function seedTabs(): WorkspaceTab[] {
       }
     }
   } catch {
-    // Corrupt/absent legacy state — fall through to a default tab.
+    // Corrupt/absent legacy state — fall through to no tabs.
   }
-  return [makeTab(null)];
+  // No auto-created blank tab: a fresh launch sits on the Launch Hub with zero
+  // tabs (which the workspace view already treats as "return to the hub"), so
+  // nothing spawns a shell until the user actually opens a folder or explicitly
+  // launches a blank terminal.
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +337,16 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           // otherwise fall back to the applied preset, then the default grid.
           const remembered = cwd ? get().folderLayouts[cwd] : undefined;
           const tab = makeTab(cwd, remembered ?? get().layoutTemplate);
-          set((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
+          // Restore focus mode where the folder was left, if it names a live panel.
+          if (remembered?.focusedId && tab.panels.some((p) => p.id === remembered.focusedId)) {
+            tab.focusedId = remembered.focusedId;
+          }
+          set((s) => {
+            // Opening a real folder consumes any untouched placeholder blank
+            // terminal so it doesn't linger and demand folder permissions.
+            const base = cwd ? s.tabs.filter((t) => !isDisposableBlank(t)) : s.tabs;
+            return { tabs: [...base, tab], activeId: tab.id };
+          });
           return tab.id;
         },
 
@@ -350,6 +392,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
                   panels: removed.panels,
                   grid: removed.grid.map(sanitizeGridItem),
                   panelFontSizes: removed.panelFontSizes,
+                  focusedId: removed.focusedId ?? null,
                   updatedAt: Date.now(),
                 },
               };
@@ -593,6 +636,11 @@ export const useWorkspacesStore = create<WorkspacesState>()(
                   layout.panelFontSizes && typeof layout.panelFontSizes === "object"
                     ? layout.panelFontSizes
                     : {},
+                focusedId:
+                  typeof layout.focusedId === "string" &&
+                  layout.panels.some((p) => p.id === layout.focusedId)
+                    ? layout.focusedId
+                    : null,
                 updatedAt: typeof layout.updatedAt === "number" ? layout.updatedAt : 0,
               };
             }
