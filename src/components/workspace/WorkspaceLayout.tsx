@@ -83,37 +83,41 @@ function useElementSize() {
 export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutProps) {
   const panels      = useWorkspacesStore((s) => s.tabs.find((t) => t.id === workspaceId)?.panels ?? EMPTY_PANELS);
   const grid        = useWorkspacesStore((s) => s.tabs.find((t) => t.id === workspaceId)?.grid ?? EMPTY_GRID);
+  const focusedId   = useWorkspacesStore((s) => s.tabs.find((t) => t.id === workspaceId)?.focusedId ?? null);
   const setGridRaw  = useWorkspacesStore((s) => s.setGrid);
   const closePanelRaw = useWorkspacesStore((s) => s.closePanel);
   const resetLayoutRaw = useWorkspacesStore((s) => s.resetLayout);
+  const setFocusedRaw = useWorkspacesStore((s) => s.setFocusedPanel);
 
   const setGrid    = useCallback((g: WorkspaceGridItem[]) => setGridRaw(workspaceId, g), [setGridRaw, workspaceId]);
   const closePanel = useCallback((id: string) => closePanelRaw(workspaceId, id), [closePanelRaw, workspaceId]);
+  const setFocused = useCallback((id: string | null) => setFocusedRaw(workspaceId, id), [setFocusedRaw, workspaceId]);
 
   const { ref, width, height } = useElementSize();
   const mounted = width > 0 && height > 0;
 
   // Panel focus mode — when set, that panel is maximized to fill the grid and
   // its siblings are hidden (via CSS keyed off the classes below). All panels
-  // stay mounted so their PTYs keep running. Local + transient by design.
-  const [focusedId, setFocusedId] = useState<string | null>(null);
+  // stay mounted so their PTYs keep running. Persisted per tab (see the store's
+  // `focusedId`) so reopening the app restores whichever panel was focused.
   const toggleFocus = useCallback(
-    (id: string) => setFocusedId((cur) => (cur === id ? null : id)),
-    [],
+    (id: string) => setFocused(focusedId === id ? null : id),
+    [setFocused, focusedId],
   );
 
-  // Drop focus if the focused panel is closed/removed.
+  // Drop focus if the focused panel is closed/removed. The store clears focus at
+  // each removal path too; this is a belt-and-suspenders guard for any it misses.
   useEffect(() => {
-    if (focusedId && !panels.some((p) => p.id === focusedId)) setFocusedId(null);
-  }, [panels, focusedId]);
+    if (focusedId && !panels.some((p) => p.id === focusedId)) setFocused(null);
+  }, [panels, focusedId, setFocused]);
 
   // Esc exits focus mode (only for the foreground tab).
   useEffect(() => {
     if (!focusedId || !active) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFocusedId(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFocused(null); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusedId, active]);
+  }, [focusedId, active, setFocused]);
 
   const rowHeight = useMemo(() => {
     const usable = height - (GRID_ROWS - 1) * GRID_MARGIN[1];

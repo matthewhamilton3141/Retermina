@@ -47,6 +47,13 @@ export interface WorkspaceTab {
   /** Per-panel font size as a percentage (70–150, default 100). */
   panelFontSizes: Record<string, number>;
   /**
+   * Id of the panel currently maximized into focus mode, or null/undefined for
+   * none. Persisted per tab so reopening the app restores whichever panel was
+   * focused when it closed. Optional because tabs persisted before this field
+   * existed lack it.
+   */
+  focusedId?: string | null;
+  /**
    * Grid rects of panels that were hidden/closed, keyed by panel id. When a
    * panel is toggled back on it returns to its remembered spot — if that spot
    * is still free — instead of being re-placed from scratch. Optional because
@@ -120,6 +127,8 @@ interface WorkspacesState {
     panelFontSizes?: Record<string, number>,
   ) => void;
   setPanelFontSize: (id: string, panelId: string, size: number) => void;
+  /** Set (or clear, with null) which panel is maximized into focus mode. */
+  setFocusedPanel: (id: string, panelId: string | null) => void;
   /** Append a fresh terminal panel to a free grid slot. Used by split pop-out. */
   addTerminalPanel: (id: string) => void;
   /** Remember (or clear) the layout that newly created tabs should start from. */
@@ -391,7 +400,14 @@ export const useWorkspacesStore = create<WorkspacesState>()(
 
         togglePanel: (id, kind) =>
           set((s) => ({
-            tabs: patch(s.tabs, id, (t) => ({ ...t, ...togglePanelInTab(t)(kind) })),
+            tabs: patch(s.tabs, id, (t) => {
+              const next = { ...t, ...togglePanelInTab(t)(kind) };
+              // Hiding the focused panel drops focus mode with it.
+              if (t.focusedId && !next.panels.some((p) => p.id === t.focusedId)) {
+                next.focusedId = null;
+              }
+              return next;
+            }),
           })),
 
         closePanel: (id, panelId) =>
@@ -401,6 +417,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               panels: t.panels.filter((p) => p.id !== panelId),
               grid: t.grid.filter((item) => item.i !== panelId),
               closedSlots: rememberSlot(t, panelId),
+              focusedId: t.focusedId === panelId ? null : t.focusedId,
             })),
           })),
 
@@ -412,8 +429,8 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           set((s) => ({
             tabs: patch(s.tabs, id, (t) => {
               const fresh = createDefaultWorkspaceLayout();
-              // A reset is a fresh start — drop remembered slots too.
-              return { ...t, panels: fresh.panels, grid: fresh.grid, closedSlots: {} };
+              // A reset is a fresh start — drop remembered slots and focus too.
+              return { ...t, panels: fresh.panels, grid: fresh.grid, closedSlots: {}, focusedId: null };
             }),
           }));
           useToastStore.getState().push({
@@ -432,8 +449,9 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               panels,
               grid: grid.map(sanitizeGridItem),
               panelFontSizes: panelFontSizes ?? t.panelFontSizes,
-              // A preset/Loom replaces the arrangement — old slots are moot.
+              // A preset/Loom replaces the arrangement — old slots/focus are moot.
               closedSlots: {},
+              focusedId: null,
             })),
           })),
 
@@ -447,6 +465,9 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               },
             })),
           })),
+
+        setFocusedPanel: (id, panelId) =>
+          set((s) => ({ tabs: patch(s.tabs, id, (t) => ({ ...t, focusedId: panelId })) })),
 
         addTerminalPanel: (id) =>
           set((s) => ({
@@ -509,6 +530,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           grid: t.grid.map(sanitizeGridItem),
           panelFontSizes: t.panelFontSizes,
           closedSlots: t.closedSlots ?? {},
+          focusedId: t.focusedId ?? null,
         })),
         activeId: state.activeId,
         layoutTemplate: state.layoutTemplate,
@@ -535,7 +557,12 @@ export const useWorkspacesStore = create<WorkspacesState>()(
                 if (isWorkspaceGridArray([slot])) slots[pid] = sanitizeGridItem(slot);
               }
             }
-            return { ...t, closedSlots: slots };
+            // Keep a persisted focus only if it still names a live panel.
+            const focusedId =
+              typeof t.focusedId === "string" && t.panels.some((p) => p.id === t.focusedId)
+                ? t.focusedId
+                : null;
+            return { ...t, closedSlots: slots, focusedId };
           });
         const template =
           data?.layoutTemplate &&
