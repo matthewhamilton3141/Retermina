@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import Icon, { type IconName } from "../Icon";
 import { useWorkspacesStore } from "../../store/workspaces";
+import { PanelZoomContext } from "./panelZoom";
 
 export interface PanelFrameProps {
   icon: IconName;
@@ -15,6 +16,12 @@ export interface PanelFrameProps {
   focused?: boolean;
   /** Toggle focus mode for this panel. */
   onToggleFocus?: () => void;
+  /**
+   * When true, the panel scales its own content (via {@link PanelZoomContext})
+   * instead of being CSS-scaled. Used for the terminal, whose xterm canvas
+   * breaks selection under any scaled ancestor. See panelZoom.ts.
+   */
+  selfZoom?: boolean;
   children: ReactNode;
 }
 
@@ -22,7 +29,7 @@ const STEP = 10;
 const MIN  = 70;
 const MAX  = 150;
 
-export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused, onToggleFocus, children }: PanelFrameProps) {
+export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused, onToggleFocus, selfZoom, children }: PanelFrameProps) {
   const fontSize = useWorkspacesStore(
     (s) => s.tabs.find((t) => t.id === workspaceId)?.panelFontSizes[panelId] ?? 100,
   );
@@ -31,6 +38,22 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused
 
   const zoomOut = () => setPanelFontSize(panelId, fontSize - STEP);
   const zoomIn  = () => setPanelFontSize(panelId, fontSize + STEP);
+
+  const scale = fontSize / 100;
+  // CSS-scale the content for panels that use native browser selection. We use
+  // `transform` (not `zoom`): WebKit hit-tests selection correctly under a
+  // transform, but computes it in unscaled coords under `zoom`, so highlighting
+  // lands offset. Origin top-left + a compensating 1/scale box makes the scaled
+  // content fill the panel exactly, matching how `zoom` reflowed layout.
+  const contentStyle: CSSProperties | undefined =
+    selfZoom || scale === 1
+      ? undefined
+      : {
+          transform: `scale(${scale})`,
+          transformOrigin: "0 0",
+          width: `${100 / scale}%`,
+          height: `${100 / scale}%`,
+        };
 
   return (
     <div className="rt-panel flex h-full w-full flex-col overflow-hidden">
@@ -59,16 +82,21 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused
           >
             −
           </button>
-          {fontSize !== 100 && (
-            <button
-              type="button"
-              onClick={() => setPanelFontSize(panelId, 100)}
-              title="Reset text size"
-              className="rt-text-faint min-w-[26px] text-center text-[9px] tabular-nums hover:opacity-70"
-            >
-              {fontSize}%
-            </button>
-          )}
+          {/* Fixed-width slot so the readout appearing at non-100% never
+              shoves −/+ sideways (which made a double-click on a button land
+              on the number instead). */}
+          <div className="flex h-4 w-[30px] items-center justify-center">
+            {fontSize !== 100 && (
+              <button
+                type="button"
+                onClick={() => setPanelFontSize(panelId, 100)}
+                title="Reset text size"
+                className="rt-text-faint text-[9px] tabular-nums leading-none hover:opacity-70"
+              >
+                {fontSize}%
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={zoomIn}
@@ -105,13 +133,13 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused
         )}
       </div>
 
-      {/* Content: zoom scales rem-based Tailwind utilities (unlike fontSize %).
+      {/* Content: transform-scaled for native-selection panels; self-zooming
+          panels (terminal) read the factor from context and scale their font.
           overflow-hidden lets each panel's own internal scroller handle overflow. */}
-      <div
-        className="min-h-0 flex-1 overflow-hidden"
-        style={fontSize !== 100 ? { zoom: fontSize / 100 } : undefined}
-      >
-        {children}
+      <div className="min-h-0 flex-1 overflow-hidden" style={contentStyle}>
+        <PanelZoomContext.Provider value={scale}>
+          {children}
+        </PanelZoomContext.Provider>
       </div>
     </div>
   );

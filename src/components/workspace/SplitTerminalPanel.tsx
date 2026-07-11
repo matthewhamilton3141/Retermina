@@ -14,7 +14,9 @@
 import { Fragment, memo, useCallback, useRef, useState } from "react";
 
 import Icon from "../Icon";
-import TerminalViewport from "./TerminalViewport";
+import TerminalViewport, { type TerminalControls } from "./TerminalViewport";
+import { claudeBus, useClaudeTarget } from "../../lib/claudeBus";
+import { useToastStore } from "../../store/toast";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,11 +83,14 @@ function PaneDivider({
 export const SplitTerminalPanel = memo(function SplitTerminalPanel({
   cwd,
   active = true,
+  workspaceId,
   onPopOut,
 }: {
   cwd: string | null;
   /** Whether the owning workspace tab is in the foreground. */
   active?: boolean;
+  /** The tab this terminal lives in — used to reach its Claude Code panel. */
+  workspaceId: string;
   /**
    * Detach a pane into its own terminal panel on the workspace grid. Called
    * with no arguments — the caller adds a fresh terminal panel; this component
@@ -109,6 +114,35 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
       if (id !== paneId) write(data);
     });
   }, []);
+  // Each pane's control handle, in insertion order, for "send to Claude".
+  const controlsRef = useRef<Map<string, TerminalControls>>(new Map());
+  const hasClaude = useClaudeTarget(workspaceId);
+
+  // Send the terminal's text to the workspace's Claude Code panel: a live
+  // selection (in any pane) wins, else the last pane's last command output.
+  const sendToClaude = useCallback(() => {
+    let text = "";
+    for (const controls of controlsRef.current.values()) {
+      if (controls.getSelection().trim()) {
+        text = controls.getSelection();
+        break;
+      }
+    }
+    if (!text.trim()) {
+      const panesControls = [...controlsRef.current.values()];
+      text = panesControls[panesControls.length - 1]?.getLastOutput() ?? "";
+    }
+    const toast = useToastStore.getState();
+    if (!text.trim()) {
+      toast.push({ message: "Nothing to send yet — run a command or select some text." });
+      return;
+    }
+    toast.push(
+      claudeBus.send(workspaceId, text)
+        ? { message: "Sent to Claude Code" }
+        : { message: "Open a Claude Code panel in this workspace to send output." },
+    );
+  }, [workspaceId]);
   // Live pointer-drag state for a pane being dragged out of the split.
   const [popout, setPopout] = useState<{ paneId: string; x: number; y: number; outside: boolean } | null>(null);
 
@@ -232,6 +266,20 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
         </span>
         <button
           type="button"
+          onClick={sendToClaude}
+          disabled={!hasClaude}
+          title={
+            hasClaude
+              ? "Send your selection — or the last command's output — to Claude Code"
+              : "Open a Claude Code panel in this workspace to send output to it"
+          }
+          className="rt-btn-outline flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium disabled:opacity-40"
+        >
+          <Icon name="claudeLogo" size={11} />
+          <span>Send</span>
+        </button>
+        <button
+          type="button"
           onClick={() => split("h")}
           title="Split horizontally (side-by-side)"
           className="rt-btn-outline flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium"
@@ -311,6 +359,10 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
                 registerWrite={(write) => {
                   if (write) writesRef.current.set(pane.id, write);
                   else writesRef.current.delete(pane.id);
+                }}
+                registerControls={(controls) => {
+                  if (controls) controlsRef.current.set(pane.id, controls);
+                  else controlsRef.current.delete(pane.id);
                 }}
               />
             </div>

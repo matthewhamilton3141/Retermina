@@ -68,6 +68,8 @@ interface AppState {
   reduceTransparency: boolean;
   /** Whether the terminal cursor blinks. */
   terminalCursorBlink: boolean;
+  /** Copy the terminal's text selection to the clipboard as soon as it's made. */
+  terminalCopyOnSelect: boolean;
   /** Workspace backdrop style. */
   backdropStyle: BackdropStyle;
   /** The user-defined gradient used when backdropStyle is "custom". */
@@ -92,6 +94,7 @@ interface AppState {
   setHighContrast: (on: boolean) => void;
   setReduceTransparency: (on: boolean) => void;
   setTerminalCursorBlink: (on: boolean) => void;
+  setTerminalCopyOnSelect: (on: boolean) => void;
   setBackdropStyle: (style: BackdropStyle) => void;
   setCustomBackdrop: (gradient: CustomGradient) => void;
   saveCustomTheme: (name: string) => void;
@@ -124,6 +127,7 @@ export const useAppStore = create<AppState>()(
       highContrast: false,
       reduceTransparency: false,
       terminalCursorBlink: true,
+      terminalCopyOnSelect: true,
       backdropStyle: "mesh",
       customBackdrop: DEFAULT_CUSTOM_GRADIENT,
       customThemes: [],
@@ -182,6 +186,7 @@ export const useAppStore = create<AppState>()(
       setHighContrast: (on) => set({ highContrast: on }),
       setReduceTransparency: (on) => set({ reduceTransparency: on }),
       setTerminalCursorBlink: (on) => set({ terminalCursorBlink: on }),
+      setTerminalCopyOnSelect: (on) => set({ terminalCopyOnSelect: on }),
       setBackdropStyle: (style) => set({ backdropStyle: style }),
       setCustomBackdrop: (gradient) => set({ customBackdrop: gradient }),
 
@@ -233,6 +238,7 @@ export const useAppStore = create<AppState>()(
         highContrast: s.highContrast,
         reduceTransparency: s.reduceTransparency,
         terminalCursorBlink: s.terminalCursorBlink,
+        terminalCopyOnSelect: s.terminalCopyOnSelect,
         backdropStyle: s.backdropStyle,
         customBackdrop: s.customBackdrop,
         customThemes: s.customThemes,
@@ -266,6 +272,7 @@ export const useAppStore = create<AppState>()(
         const highContrast = typeof p?.highContrast === "boolean" ? p.highContrast : current.highContrast;
         const reduceTransparency = typeof p?.reduceTransparency === "boolean" ? p.reduceTransparency : current.reduceTransparency;
         const terminalCursorBlink = typeof p?.terminalCursorBlink === "boolean" ? p.terminalCursorBlink : current.terminalCursorBlink;
+        const terminalCopyOnSelect = typeof p?.terminalCopyOnSelect === "boolean" ? p.terminalCopyOnSelect : current.terminalCopyOnSelect;
         const backdropStyle: BackdropStyle =
           p?.backdropStyle === "solid" || p?.backdropStyle === "gradient" ||
           p?.backdropStyle === "mesh" || p?.backdropStyle === "custom"
@@ -273,7 +280,7 @@ export const useAppStore = create<AppState>()(
         const customBackdrop = sanitizeGradient(p?.customBackdrop) ?? current.customBackdrop;
         const customThemes = Array.isArray(p?.customThemes) ? p!.customThemes : current.customThemes;
         const customFonts = Array.isArray(p?.customFonts) ? p!.customFonts : current.customFonts;
-        return { ...current, view, themeId, toolbarStyle, topBarStyle, accentColor, fontId, terminalFontId, terminalFontSize, autoPairFont, uiScale, motionPreference, highContrast, reduceTransparency, terminalCursorBlink, backdropStyle, customBackdrop, customThemes, customFonts };
+        return { ...current, view, themeId, toolbarStyle, topBarStyle, accentColor, fontId, terminalFontId, terminalFontSize, autoPairFont, uiScale, motionPreference, highContrast, reduceTransparency, terminalCursorBlink, terminalCopyOnSelect, backdropStyle, customBackdrop, customThemes, customFonts };
       },
     },
   ),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -19,6 +19,7 @@ import { resolveTerminalFontStack } from "../../lib/fonts";
 import { useAppStore } from "../../store/app";
 import { useTheme } from "../../theme/ThemeProvider";
 import { useTauriFileDrop } from "../../hooks/useTauriFileDrop";
+import { usePanelZoom } from "./panelZoom";
 import Icon from "../Icon";
 
 /** Decode a base64 chunk into bytes for xterm (which reassembles UTF-8). */
@@ -73,6 +74,25 @@ export interface TerminalViewportProps {
    * teardown), so a parent can write directly into this specific terminal.
    */
   registerWrite?: (write: ((data: string) => void) | null) => void;
+  /**
+   * Receives a richer control handle once connected (and `null` on teardown):
+   * write/focus plus text capture. Used to route "send to Claude" (grab this
+   * terminal's selection or last command output) and to let the Claude panel
+   * expose its own paste/focus to {@link claudeBus}.
+   */
+  registerControls?: (controls: TerminalControls | null) => void;
+}
+
+/** Imperative handle to a live terminal, surfaced via `registerControls`. */
+export interface TerminalControls {
+  /** Write raw bytes to this terminal's PTY. */
+  write: (data: string) => void;
+  /** Focus this terminal. */
+  focus: () => void;
+  /** The current text selection (empty string when nothing is selected). */
+  getSelection: () => string;
+  /** The most recent command + its output, or the visible screen as fallback. */
+  getLastOutput: () => string;
 }
 
 /**
@@ -88,6 +108,23 @@ function shellQuote(p: string): string {
   return p;
 }
 
+/**
+ * Search match highlight colours. The search addon only computes a match
+ * *count* (and fires `onDidChangeResults`, which powers the "n/m" readout) when
+ * `decorations` are supplied — without them the counter is stuck at "0/0". So
+ * these do double duty: highlight every hit and unlock the count. Conventional
+ * editor find colours — yellow for matches, orange for the active one — legible
+ * on both light and dark terminals.
+ */
+const SEARCH_DECORATIONS = {
+  matchBackground: "#ffd23c59",
+  matchBorder: "#ffd23cb3",
+  matchOverviewRuler: "#f5c542",
+  activeMatchBackground: "#ff8d1a8c",
+  activeMatchBorder: "#ff8c1a",
+  activeMatchColorOverviewRuler: "#ff8c1a",
+} as const;
+
 export function TerminalViewport({
   cwd = null,
   className,
@@ -97,6 +134,7 @@ export function TerminalViewport({
   active = true,
   onInput,
   registerWrite,
+  registerControls,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Re-claims the Iris bus for this terminal; populated once the PTY connects.
@@ -109,6 +147,8 @@ export function TerminalViewport({
   onInputRef.current = onInput;
   const registerWriteRef = useRef(registerWrite);
   registerWriteRef.current = registerWrite;
+  const registerControlsRef = useRef(registerControls);
+  registerControlsRef.current = registerControls;
 
   // Write function populated once the PTY session is established.
   // Used by the file-drop handler to paste paths without going through the
@@ -161,13 +201,23 @@ export function TerminalViewport({
   );
   const fontFamilyRef = useRef(terminalFontFamily);
   fontFamilyRef.current = terminalFontFamily;
-  const fontSizeRef = useRef(terminalFontSize);
-  fontSizeRef.current = terminalFontSize;
+  // Per-panel zoom folds into xterm's font size rather than CSS-scaling the
+  // panel — a scaled ancestor desyncs xterm's pointer→cell math and breaks
+  // text selection. The effective size is the user's font size × the zoom.
+  const panelZoom = usePanelZoom();
+  const effectiveFontSize = Math.round(terminalFontSize * panelZoom);
+  const fontSizeRef = useRef(effectiveFontSize);
+  fontSizeRef.current = effectiveFontSize;
   // Cursor blink is an accessibility preference (a blinking cursor can be a
   // distraction / photosensitivity concern). Same ref-seed pattern.
   const terminalCursorBlink = useAppStore((s) => s.terminalCursorBlink);
   const cursorBlinkRef = useRef(terminalCursorBlink);
   cursorBlinkRef.current = terminalCursorBlink;
+  // Copy-on-select: mirror the setting in a ref so the mouseup handler in the
+  // PTY effect reads the latest value without re-running (respawning the shell).
+  const copyOnSelect = useAppStore((s) => s.terminalCopyOnSelect);
+  const copyOnSelectRef = useRef(copyOnSelect);
+  copyOnSelectRef.current = copyOnSelect;
   // Populated inside the PTY effect: refits the terminal to its container and
   // resyncs the PTY dimensions. Lets the font effect trigger a proper refit
   // without owning the FitAddon instance (which lives in that effect).
@@ -236,7 +286,47 @@ export function TerminalViewport({
       }
     }
 
+    // ── Command-boundary tracking for "send last output to Claude" ──
+    // xterm markers auto-track their line as scrollback scrolls. On each Enter
+    // we drop a marker at the command's prompt line; "last output" is then the
+    // text from that marker down to the current (fresh) prompt line.
+    let lastCmdMarker: IMarker | null = null;
+
+    const getLastOutput = (): string => {
+      const buf = term.buffer.active;
+      const end = buf.baseY + buf.cursorY; // current prompt row (exclusive)
+      const marked = lastCmdMarker && !lastCmdMarker.isDisposed ? lastCmdMarker.line : -1;
+      // With a marker above the prompt we capture the command + its output;
+      // otherwise fall back to the visible screen (no command run yet, or the
+      // marker was evicted from scrollback).
+      const start = marked >= 0 && marked < end ? marked : buf.baseY;
+      const lines: string[] = [];
+      for (let y = start; y < end; y += 1) {
+        const line = buf.getLine(y);
+        if (line) lines.push(line.translateToString(true));
+      }
+      return lines.join("\n").replace(/^\n+/, "").trimEnd();
+    };
+
+    // Copy-on-select: mirror the selection to the clipboard the moment a
+    // drag-select finishes — iTerm/Claude-style, no ⌘C needed.
+    const handleMouseUp = () => {
+      if (!copyOnSelectRef.current) return;
+      const selection = term.getSelection();
+      if (selection) void navigator.clipboard?.writeText(selection).catch(() => {});
+    };
+    container.addEventListener("mouseup", handleMouseUp);
+
     const dataSub = term.onData((data) => {
+      // Enter marks a new command boundary. registerMarker is undefined on the
+      // alternate screen buffer (full-screen TUIs), so guard it.
+      if (data.includes("\r")) {
+        const marker = term.registerMarker(0);
+        if (marker) {
+          lastCmdMarker?.dispose();
+          lastCmdMarker = marker;
+        }
+      }
       if (sessionId) {
         void writeToPty(sessionId, data);
       } else {
@@ -285,6 +375,14 @@ export function TerminalViewport({
         ptyWriteRef.current = (data) => void writeToPty(id, data);
         // Hand the write fn to a parent (split panel broadcast) too.
         registerWriteRef.current?.((data) => void writeToPty(id, data));
+        // Richer control handle: powers "send to Claude" (capture) and lets the
+        // Claude panel register its own paste/focus with claudeBus.
+        registerControlsRef.current?.({
+          write: (data) => void writeToPty(id, data),
+          focus: () => term.focus(),
+          getSelection: () => term.getSelection(),
+          getLastOutput,
+        });
 
         if (registerWithBus) {
           // Expose this session to Iris so it can run commands here. Registered
@@ -332,6 +430,9 @@ export function TerminalViewport({
       registerBusRef.current = null;
       refitRef.current = null;
       registerWriteRef.current?.(null);
+      registerControlsRef.current?.(null);
+      container.removeEventListener("mouseup", handleMouseUp);
+      lastCmdMarker?.dispose();
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
       resultsSub.dispose();
@@ -362,10 +463,10 @@ export function TerminalViewport({
     const term = termRef.current;
     if (!term) return;
     term.options.fontFamily = terminalFontFamily;
-    term.options.fontSize = terminalFontSize;
+    term.options.fontSize = effectiveFontSize;
     refitRef.current?.();
     void document.fonts.ready.then(() => refitRef.current?.());
-  }, [terminalFontFamily, terminalFontSize]);
+  }, [terminalFontFamily, effectiveFontSize]);
 
   // Toggle the live cursor blink (no refit needed — metrics are unchanged).
   useEffect(() => {
@@ -390,24 +491,31 @@ export function TerminalViewport({
   useEffect(() => {
     if (!searchOpen) return;
     if (searchQuery) {
-      searchAddonRef.current?.findNext(searchQuery, { incremental: true });
+      searchAddonRef.current?.findNext(searchQuery, {
+        incremental: true,
+        decorations: SEARCH_DECORATIONS,
+      });
     } else {
+      searchAddonRef.current?.clearDecorations();
       termRef.current?.clearSelection();
       setSearchResults({ index: -1, count: 0 });
     }
   }, [searchQuery, searchOpen]);
 
   const findNext = useCallback(() => {
-    if (searchQuery) searchAddonRef.current?.findNext(searchQuery);
+    if (searchQuery)
+      searchAddonRef.current?.findNext(searchQuery, { decorations: SEARCH_DECORATIONS });
   }, [searchQuery]);
 
   const findPrevious = useCallback(() => {
-    if (searchQuery) searchAddonRef.current?.findPrevious(searchQuery);
+    if (searchQuery)
+      searchAddonRef.current?.findPrevious(searchQuery, { decorations: SEARCH_DECORATIONS });
   }, [searchQuery]);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery("");
+    searchAddonRef.current?.clearDecorations();
     termRef.current?.clearSelection();
     termRef.current?.focus();
   }, []);

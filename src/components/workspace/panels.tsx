@@ -15,8 +15,9 @@ import TasksPanel from "./TasksPanel";
 import LivePreviewPanel from "./LivePreviewPanel";
 import LocalhostPanel from "./LocalhostPanel";
 import { SplitTerminalPanel } from "./SplitTerminalPanel";
-import TerminalViewport from "./TerminalViewport";
+import TerminalViewport, { type TerminalControls } from "./TerminalViewport";
 import { useWorkspacesStore } from "../../store/workspaces";
+import { claudeBus } from "../../lib/claudeBus";
 
 /** Context handed to a panel renderer. */
 export interface PanelRenderContext {
@@ -48,6 +49,7 @@ const TerminalPanel = memo(function TerminalPanel({
     <SplitTerminalPanel
       cwd={cwd}
       active={active}
+      workspaceId={workspaceId}
       onPopOut={() => useWorkspacesStore.getState().addTerminalPanel(workspaceId)}
     />
   );
@@ -427,9 +429,25 @@ function formatTokens(n: number): string {
 
 const ClaudeCodePanel = memo(function ClaudeCodePanel({
   cwd,
+  workspaceId,
 }: {
   cwd: string | null;
+  workspaceId: string;
 }) {
+  // Expose this Claude session's paste/focus to the workspace's Terminal panel
+  // (via claudeBus) so "send last output to Claude" can reach it. The controls
+  // arrive once the PTY connects; a ref keeps the latest across restarts.
+  const controlsRef = useRef<TerminalControls | null>(null);
+  useEffect(() => {
+    claudeBus.set(workspaceId, {
+      // Bracketed paste: Claude Code inserts it into the prompt as pasted text
+      // (multi-line safe) without submitting, so the user can add a question.
+      paste: (text) => controlsRef.current?.write(`\x1b[200~${text}\x1b[201~`),
+      focus: () => controlsRef.current?.focus(),
+      submit: () => controlsRef.current?.write("\r"),
+    });
+    return () => claudeBus.clear(workspaceId);
+  }, [workspaceId]);
   const [usage, setUsage] = useState<ClaudeTokenUsage | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -564,6 +582,7 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
           className="h-full w-full"
           initialCommand="claude"
           registerWithBus={false}
+          registerControls={(c) => { controlsRef.current = c; }}
         />
       </div>
     </div>
@@ -585,7 +604,7 @@ export const PANEL_RENDERERS: Record<
   fileExplorer: ({ cwd }) => <FileExplorerPanel cwd={cwd} />,
   codeView: () => <CodeViewPanel />,
   localhost: () => <LocalhostPanel />,
-  claudeCode: ({ cwd }) => <ClaudeCodePanel cwd={cwd} />,
+  claudeCode: ({ cwd, workspaceId }) => <ClaudeCodePanel cwd={cwd} workspaceId={workspaceId} />,
   livePreview: () => <LivePreviewPanel />,
   gitDiff: ({ cwd }) => <GitDiffPanel cwd={cwd} />,
   tasks: ({ cwd }) => <TasksPanel cwd={cwd} />,

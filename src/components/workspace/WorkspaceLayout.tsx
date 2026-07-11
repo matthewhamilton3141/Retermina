@@ -21,6 +21,7 @@ import "react-resizable/css/styles.css";
 
 import PanelFrame from "./PanelFrame";
 import { PANEL_RENDERERS } from "./panels";
+import ConfirmDialog from "../ConfirmDialog";
 import { useWorkspacesStore } from "../../store/workspaces";
 import { clampToGrid, resolveDrop } from "../../lib/gridCollision";
 import {
@@ -29,9 +30,13 @@ import {
   GRID_ROWS,
   MIN_ROW_HEIGHT,
   PANEL_META,
+  type PanelKind,
   type WorkspaceGridItem,
   type WorkspacePanel,
 } from "../../lib/workspaceLayout";
+
+/** Panel kinds that own a live PTY session — closing one is destructive. */
+const LIVE_SESSION_KINDS: ReadonlySet<PanelKind> = new Set(["terminal", "claudeCode"]);
 
 export interface WorkspaceLayoutProps {
   /** The tab whose layout this grid renders. */
@@ -92,6 +97,18 @@ export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutPro
   const setGrid    = useCallback((g: WorkspaceGridItem[]) => setGridRaw(workspaceId, g), [setGridRaw, workspaceId]);
   const closePanel = useCallback((id: string) => closePanelRaw(workspaceId, id), [closePanelRaw, workspaceId]);
   const setFocused = useCallback((id: string | null) => setFocusedRaw(workspaceId, id), [setFocusedRaw, workspaceId]);
+
+  // Closing a Terminal or Claude Code panel tears down its live session, so it
+  // goes through a confirmation first (like closing a workspace tab). Other
+  // panels close immediately. Scoped to this tab via local state.
+  const [pendingClosePanelId, setPendingClosePanelId] = useState<string | null>(null);
+  const requestClosePanel = useCallback(
+    (id: string, kind: PanelKind) => {
+      if (LIVE_SESSION_KINDS.has(kind)) setPendingClosePanelId(id);
+      else closePanel(id);
+    },
+    [closePanel],
+  );
 
   const { ref, width, height } = useElementSize();
   const mounted = width > 0 && height > 0;
@@ -182,17 +199,22 @@ export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutPro
               title={panel.title}
               workspaceId={workspaceId}
               panelId={panel.id}
-              onClose={() => closePanel(panel.id)}
+              onClose={() => requestClosePanel(panel.id, panel.kind)}
               focused={isFocused}
               onToggleFocus={() => toggleFocus(panel.id)}
+              // xterm panels scale their own font (see PanelFrame.selfZoom):
+              // a scaled ancestor would break their text selection.
+              selfZoom={panel.kind === "terminal" || panel.kind === "claudeCode"}
             >
               {renderer({ cwd, workspaceId, active })}
             </PanelFrame>
           </div>
         );
       }),
-    [panels, cwd, closePanel, workspaceId, active, focusedId, toggleFocus],
+    [panels, cwd, requestClosePanel, workspaceId, active, focusedId, toggleFocus],
   );
+
+  const pendingClosePanel = panels.find((p) => p.id === pendingClosePanelId) ?? null;
 
   return (
     <div ref={ref} className="h-full w-full overflow-hidden">
@@ -240,6 +262,25 @@ export function WorkspaceLayout({ workspaceId, cwd, active }: WorkspaceLayoutPro
           {children}
         </GridLayout>
       )}
+
+      <ConfirmDialog
+        open={pendingClosePanel !== null}
+        title={`Close ${pendingClosePanel?.title ?? "panel"}?`}
+        message={
+          <>
+            “{pendingClosePanel?.title}” has a live session. Closing it ends any
+            running processes in this panel.
+          </>
+        }
+        confirmLabel="Close panel"
+        cancelLabel="Keep open"
+        destructive
+        onConfirm={() => {
+          if (pendingClosePanelId) closePanel(pendingClosePanelId);
+          setPendingClosePanelId(null);
+        }}
+        onCancel={() => setPendingClosePanelId(null)}
+      />
     </div>
   );
 }

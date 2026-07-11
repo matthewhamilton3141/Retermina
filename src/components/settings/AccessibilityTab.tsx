@@ -40,6 +40,8 @@ export default function AccessibilityTab() {
   const setReduceTransparency = useAppStore((s) => s.setReduceTransparency);
   const terminalCursorBlink     = useAppStore((s) => s.terminalCursorBlink);
   const setTerminalCursorBlink  = useAppStore((s) => s.setTerminalCursorBlink);
+  const terminalCopyOnSelect    = useAppStore((s) => s.terminalCopyOnSelect);
+  const setTerminalCopyOnSelect = useAppStore((s) => s.setTerminalCopyOnSelect);
 
   return (
     <div className="flex flex-col gap-6">
@@ -72,12 +74,20 @@ export default function AccessibilityTab() {
 
       <section>
         <SectionTitle>Terminal</SectionTitle>
-        <ToggleRow
-          label="Blinking cursor"
-          desc="Animate the terminal cursor. Turn off to keep it steady."
-          checked={terminalCursorBlink}
-          onChange={setTerminalCursorBlink}
-        />
+        <div className="flex flex-col gap-2">
+          <ToggleRow
+            label="Blinking cursor"
+            desc="Animate the terminal cursor. Turn off to keep it steady."
+            checked={terminalCursorBlink}
+            onChange={setTerminalCursorBlink}
+          />
+          <ToggleRow
+            label="Copy on select"
+            desc="Copy highlighted terminal text to the clipboard automatically, no ⌘C needed."
+            checked={terminalCopyOnSelect}
+            onChange={setTerminalCopyOnSelect}
+          />
+        </div>
       </section>
     </div>
   );
