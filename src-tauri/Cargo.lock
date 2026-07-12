@@ -3037,7 +3037,7 @@ dependencies = [
 
 [[package]]
 name = "retermina"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",

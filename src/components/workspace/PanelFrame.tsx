@@ -73,18 +73,10 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused
           className="panel-no-drag flex shrink-0 items-center gap-0.5"
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={zoomOut}
-            disabled={fontSize <= MIN}
-            title="Decrease text size"
-            className="rt-btn flex h-4 w-4 items-center justify-center text-[11px] font-semibold leading-none disabled:opacity-30"
-          >
-            −
-          </button>
           {/* Fixed-width slot so the readout appearing at non-100% never
               shoves −/+ sideways (which made a double-click on a button land
-              on the number instead). */}
+              on the number instead). Sits to the left of both buttons so −/+
+              stay adjacent. */}
           <div className="flex h-4 w-[30px] items-center justify-center">
             {fontSize !== 100 && (
               <button
@@ -97,6 +89,15 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused
               </button>
             )}
           </div>
+          <button
+            type="button"
+            onClick={zoomOut}
+            disabled={fontSize <= MIN}
+            title="Decrease text size"
+            className="rt-btn flex h-4 w-4 items-center justify-center text-[11px] font-semibold leading-none disabled:opacity-30"
+          >
+            −
+          </button>
           <button
             type="button"
             onClick={zoomIn}
