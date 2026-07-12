@@ -144,14 +144,18 @@ function App() {
         <TitleBar />
         <div className="relative flex-1 min-h-0">
           {/* Workspace stays mounted across a Launch Hub visit so live terminals
-              survive; hidden (not unmounted) when the hub is showing. */}
+              survive; hidden (not unmounted) when the hub is showing. Use
+              `display: none`, not `visibility: hidden` — the active tab inside
+              sets `visibility: visible`, and a descendant's visibility overrides
+              an ancestor's, so a merely-hidden workspace would paint straight
+              through the hub. `display: none` can't be overridden, and React
+              keeps the subtree mounted so the PTYs live on. */}
           {keepWorkspaceMounted && (
             <div
               className="absolute inset-0"
               style={{
-                visibility: view === "workspace" ? "visible" : "hidden",
-                zIndex: view === "workspace" ? 1 : 0,
-                pointerEvents: view === "workspace" ? "auto" : "none",
+                display: view === "workspace" ? undefined : "none",
+                zIndex: 1,
               }}
               aria-hidden={view !== "workspace"}
             >
