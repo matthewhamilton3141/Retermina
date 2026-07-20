@@ -26,6 +26,49 @@ pub struct ClaudeTokenUsage {
     pub session_count: u32,
     /// Estimated total cost in USD (approximate, based on Sonnet 4 pricing).
     pub estimated_cost_usd: f64,
+    /// Tokens occupying the context window on the most recent turn of the live
+    /// (most-recently-modified) session: `input + cache_read + cache_creation`.
+    /// Zero when no session has a usage record yet.
+    pub context_tokens: u64,
+    /// The context window size (in tokens) of the live session's model.
+    pub context_window: u64,
+    /// The live session's model id (e.g. `claude-opus-4-8`), if known.
+    pub model: Option<String>,
+}
+
+/// Context window size (tokens) for a Claude model id. Claude models are 200K
+/// by default; the `[1m]` long-context beta bumps a couple to 1M.
+fn context_window_for(model: Option<&str>) -> u64 {
+    match model {
+        Some(m) if m.contains("[1m]") || m.contains("-1m") => 1_000_000,
+        _ => 200_000,
+    }
+}
+
+/// Scan a session file for the *last* assistant turn's context footprint and
+/// model. Returns `(context_tokens, model)` where context_tokens is
+/// `input + cache_read + cache_creation` — the tokens sent to the model on that
+/// turn, i.e. how full the context window was.
+fn latest_context(path: &std::path::Path) -> (u64, Option<String>) {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return (0, None);
+    };
+    let mut context = 0;
+    let mut model = None;
+    for line in content.lines() {
+        let Ok(val) = serde_json::from_str::<Value>(line) else { continue };
+        let Some(usage) = extract_usage(&val) else { continue };
+        context = u64_field(usage, "input_tokens")
+            + u64_field(usage, "cache_read_input_tokens")
+            + u64_field(usage, "cache_creation_input_tokens");
+        model = val
+            .get("message")
+            .and_then(|m| m.get("model"))
+            .or_else(|| val.get("model"))
+            .and_then(|m| m.as_str())
+            .map(String::from);
+    }
+    (context, model)
 }
 
 /// Convert an absolute workspace path to the Claude project directory name.
@@ -64,6 +107,9 @@ fn read_usage(cwd: &str) -> ClaudeTokenUsage {
         cache_creation_tokens: 0,
         session_count: 0,
         estimated_cost_usd: 0.0,
+        context_tokens: 0,
+        context_window: context_window_for(None),
+        model: None,
     };
 
     let Some(dir) = project_dir(cwd) else { return zero; };
@@ -75,11 +121,20 @@ fn read_usage(cwd: &str) -> ClaudeTokenUsage {
     let mut cache_read: u64 = 0;
     let mut cache_create: u64 = 0;
     let mut sessions: u32 = 0;
+    // Track the most-recently-modified session — that's the live one whose
+    // context window fill we surface.
+    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
 
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
             continue;
+        }
+
+        if let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) {
+            if newest.as_ref().map_or(true, |(t, _)| mtime > *t) {
+                newest = Some((mtime, path.clone()));
+            }
         }
 
         let Ok(content) = std::fs::read_to_string(&path) else { continue };
@@ -107,6 +162,10 @@ fn read_usage(cwd: &str) -> ClaudeTokenUsage {
         + cache_create as f64 * 3.75)
         / 1_000_000.0;
 
+    let (context_tokens, model) = newest
+        .map(|(_, path)| latest_context(&path))
+        .unwrap_or((0, None));
+
     ClaudeTokenUsage {
         input_tokens: input,
         output_tokens: output,
@@ -114,6 +173,9 @@ fn read_usage(cwd: &str) -> ClaudeTokenUsage {
         cache_creation_tokens: cache_create,
         session_count: sessions,
         estimated_cost_usd: (cost * 100.0).round() / 100.0, // round to cents
+        context_window: context_window_for(model.as_deref()),
+        context_tokens,
+        model,
     }
 }
 

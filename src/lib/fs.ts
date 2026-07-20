@@ -134,6 +134,15 @@ export interface ClaudeTokenUsage {
   sessionCount: number;
   /** Approximate cost in USD (Claude Sonnet 4 pricing). */
   estimatedCostUsd: number;
+  /**
+   * Tokens filling the context window on the live session's most recent turn
+   * (`input + cache_read + cache_creation`). Zero when there's no usage yet.
+   */
+  contextTokens: number;
+  /** The live session model's context window size, in tokens. */
+  contextWindow: number;
+  /** The live session's model id (e.g. `claude-opus-4-8`), if known. */
+  model: string | null;
 }
 
 /**

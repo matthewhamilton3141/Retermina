@@ -427,6 +427,56 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+/**
+ * A compact context-window donut. `r = 15.9155` makes the ring's circumference
+ * exactly 100, so `strokeDasharray` can take the fill percent directly. Renders
+ * the rounded percent in the centre.
+ */
+function ContextDonut({
+  pct,
+  color,
+  size = 22,
+}: {
+  pct: number;
+  color: string;
+  size?: number;
+}) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 36 36" className="shrink-0">
+      <circle
+        cx="18"
+        cy="18"
+        r="15.9155"
+        fill="none"
+        stroke="var(--rt-border)"
+        strokeWidth="4"
+      />
+      <circle
+        cx="18"
+        cy="18"
+        r="15.9155"
+        fill="none"
+        stroke={color}
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeDasharray={`${Math.max(pct * 100, 0.5)} 100`}
+        transform="rotate(-90 18 18)"
+        style={{ transition: "stroke-dasharray 500ms, stroke 300ms" }}
+      />
+      <text
+        x="18"
+        y="18"
+        textAnchor="middle"
+        dominantBaseline="central"
+        className="fill-[var(--rt-text-muted)] font-mono"
+        style={{ fontSize: "11px" }}
+      >
+        {Math.round(pct * 100)}
+      </text>
+    </svg>
+  );
+}
+
 const ClaudeCodePanel = memo(function ClaudeCodePanel({
   cwd,
   workspaceId,
@@ -450,6 +500,8 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
   }, [workspaceId]);
   const [usage, setUsage] = useState<ClaudeTokenUsage | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // Context gauge starts collapsed to a bare donut; click to reveal the bar.
+  const [ctxOpen, setCtxOpen] = useState(false);
 
   // Theme-restart prompt. Claude Code reads its UI theme at launch, so a running
   // session keeps the engine it spawned under. When the engine changes such that
@@ -494,6 +546,27 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
   }, [cwd]);
 
   const hasData = usage && (usage.outputTokens > 0 || usage.sessionCount > 0);
+
+  // Context window fill for the live session — the headline gauge.
+  const ctxPct =
+    usage && usage.contextWindow > 0
+      ? Math.min(1, usage.contextTokens / usage.contextWindow)
+      : 0;
+  const showContext = !!usage && usage.contextTokens > 0;
+  // Warm the bar as the window fills so compaction is never a surprise.
+  const ctxColor =
+    ctxPct >= 0.85 ? "#ef4444" : ctxPct >= 0.6 ? "#f59e0b" : "var(--rt-accent)";
+
+  // Close the floating context popover on any click outside its badge.
+  const ctxRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!ctxOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ctxRef.current?.contains(e.target as Node)) setCtxOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [ctxOpen]);
 
   return (
     <div className="rt-terminal-surface flex h-full w-full flex-col">
@@ -575,7 +648,7 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
 
       {/* Terminal — `restartNonce` in the key forces a full remount (PTY
           teardown + a fresh `claude` launch) when the user opts to restart. */}
-      <div className="min-h-0 flex-1 p-2">
+      <div className="relative min-h-0 flex-1 p-2">
         <TerminalViewport
           key={restartNonce}
           cwd={cwd}
@@ -584,6 +657,55 @@ const ClaudeCodePanel = memo(function ClaudeCodePanel({
           registerWithBus={false}
           registerControls={(c) => { controlsRef.current = c; }}
         />
+
+        {/* Floating context-window donut — overlays the terminal's top-right
+            corner (zero layout cost). Click for the full breakdown popover. */}
+        {showContext && (
+          <div ref={ctxRef} className="absolute right-3 top-3 z-40">
+            <button
+              type="button"
+              onClick={() => setCtxOpen((v) => !v)}
+              aria-label={`Context window ${Math.round(ctxPct * 100)}% used`}
+              title="Context window"
+              className="rt-menu flex items-center justify-center rounded-full p-0.5 shadow-sm transition-opacity hover:opacity-100 opacity-70"
+            >
+              <ContextDonut pct={ctxPct} color={ctxColor} size={26} />
+            </button>
+
+            {ctxOpen && (
+              <div className="rt-menu absolute right-0 top-full z-50 mt-1.5 w-52 p-2.5">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="rt-text-muted text-[10px] font-medium uppercase tracking-wide">
+                    Context window
+                  </span>
+                  <span className="rt-text font-mono text-[11px] tabular-nums">
+                    {Math.round(ctxPct * 100)}%
+                  </span>
+                </div>
+                <div
+                  className="relative mb-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--rt-border)]"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={usage!.contextWindow}
+                  aria-valuenow={usage!.contextTokens}
+                >
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500"
+                    style={{ width: `${Math.max(2, ctxPct * 100)}%`, background: ctxColor }}
+                  />
+                </div>
+                <div className="rt-text-faint font-mono text-[10px] tabular-nums">
+                  {formatTokens(usage!.contextTokens)} / {formatTokens(usage!.contextWindow)} tokens
+                </div>
+                {usage!.model && (
+                  <div className="rt-text-faint mt-0.5 truncate text-[10px]">
+                    {usage!.model}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
