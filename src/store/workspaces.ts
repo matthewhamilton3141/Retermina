@@ -38,14 +38,27 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
+export type WorkspaceMode = "claude" | "canvas";
+
+export const DEFAULT_WORKSPACE_SIDEBAR_WIDTH = 360;
+export const EDITOR_WORKSPACE_SIDEBAR_WIDTH = 760;
+export const MIN_WORKSPACE_SIDEBAR_WIDTH = 280;
+export const MAX_WORKSPACE_SIDEBAR_WIDTH = 1040;
+
 export interface WorkspaceTab {
   id: string;
   cwd: string | null;
   title: string;
+  /** Claude is the primary surface; Canvas exposes the auxiliary panel grid. */
+  mode: WorkspaceMode;
   panels: WorkspacePanel[];
   grid: WorkspaceGridItem[];
   /** Per-panel font size as a percentage (70–150, default 100). */
   panelFontSizes: Record<string, number>;
+  /** Auxiliary panel currently open beside Claude, or null for a rail-only view. */
+  sidebarPanelId?: string | null;
+  /** Width of the Cursor-style auxiliary panel drawer. */
+  sidebarWidth?: number;
   /**
    * Id of the panel currently maximized into focus mode, or null/undefined for
    * none. Persisted per tab so reopening the app restores whichever panel was
@@ -77,6 +90,10 @@ export interface WorkspaceLayoutTemplate {
 /** A remembered per-folder layout, stamped so the map can evict oldest-first. */
 interface FolderLayout extends WorkspaceLayoutTemplate {
   updatedAt: number;
+  /** Reopen a folder in the surface it was using when closed. */
+  mode?: WorkspaceMode;
+  sidebarPanelId?: string | null;
+  sidebarWidth?: number;
   /**
    * Which panel was maximized into focus mode when the folder's tab closed, so
    * reopening the folder restores focus too (not just the tiled arrangement).
@@ -117,6 +134,9 @@ interface WorkspacesState {
   cancelCloseWorkspace: () => void;
   closeWorkspace: (id: string) => void;
   setActive: (id: string) => void;
+  setMode: (id: string, mode: WorkspaceMode) => void;
+  setSidebarPanel: (id: string, panelId: string | null) => void;
+  setSidebarWidth: (id: string, width: number) => void;
   /** Reorder: move the tab `fromId` to the current position of `toId`. */
   moveTab: (fromId: string, toId: string) => void;
 
@@ -140,6 +160,20 @@ interface WorkspacesState {
   setLayoutTemplate: (template: WorkspaceLayoutTemplate | null) => void;
 }
 
+interface PersistedWorkspacesState {
+  tabs: Array<
+    WorkspaceTab & {
+      sidebarPanelId: string | null;
+      sidebarWidth: number;
+      closedSlots: Record<string, WorkspaceGridItem>;
+      focusedId: string | null;
+    }
+  >;
+  activeId: string | null;
+  layoutTemplate: WorkspaceLayoutTemplate | null;
+  folderLayouts: Record<string, FolderLayout>;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -151,19 +185,80 @@ const newId = () =>
 
 const titleFor = (cwd: string | null) => (cwd ? prettyPath(cwd) : "Blank Terminal");
 
+const clampSidebarWidth = (width: number) =>
+  Math.round(
+    Math.max(
+      MIN_WORKSPACE_SIDEBAR_WIDTH,
+      Math.min(MAX_WORKSPACE_SIDEBAR_WIDTH, width),
+    ),
+  );
+
 function makeTab(cwd: string | null, template?: WorkspaceLayoutTemplate | null): WorkspaceTab {
   // Clone the template so tabs never share panel/grid object identity.
   const layout = template
     ? structuredClone(template)
     : { ...createDefaultWorkspaceLayout(), panelFontSizes: {} };
+  const integrated = integrateExplorerIntoEditor(layout.panels, layout.grid);
   return {
     id: newId(),
     cwd,
     title: titleFor(cwd),
-    panels: layout.panels,
-    grid: layout.grid.map(sanitizeGridItem),
+    mode: "claude",
+    panels: integrated.panels,
+    grid: integrated.grid.map(sanitizeGridItem),
     panelFontSizes: layout.panelFontSizes,
+    sidebarPanelId: null,
+    sidebarWidth: DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
   };
+}
+
+/**
+ * Explorer is now editor chrome, not a standalone workspace panel. This keeps
+ * old presets and persisted layouts usable while preventing duplicate trees.
+ */
+function integrateExplorerIntoEditor(
+  panels: readonly WorkspacePanel[],
+  grid: readonly WorkspaceGridItem[],
+): { panels: WorkspacePanel[]; grid: WorkspaceGridItem[] } {
+  const explorers = panels.filter((panel) => panel.kind === "fileExplorer");
+  if (explorers.length === 0) {
+    return { panels: [...panels], grid: [...grid] };
+  }
+
+  const explorerIds = new Set(explorers.map((panel) => panel.id));
+  const existingEditor = panels.find((panel) => panel.kind === "codeView");
+  const nextPanels = panels.filter((panel) => panel.kind !== "fileExplorer");
+  const nextGrid = grid.filter((item) => !explorerIds.has(item.i));
+  if (existingEditor) return { panels: nextPanels, grid: nextGrid };
+
+  const source = grid.find((item) => explorerIds.has(item.i));
+  const size = DEFAULT_PANEL_SIZE.codeView;
+  nextPanels.push({
+    id: PANEL_IDS.codeView,
+    kind: "codeView",
+    title: PANEL_META.codeView.label,
+  });
+  nextGrid.push(
+    source
+      ? {
+          ...source,
+          i: PANEL_IDS.codeView,
+          w: Math.max(source.w, size.minW),
+          h: Math.max(source.h, size.minH),
+          minW: size.minW,
+          minH: size.minH,
+        }
+      : {
+          i: PANEL_IDS.codeView,
+          x: 0,
+          y: 0,
+          w: size.w,
+          h: size.h,
+          minW: size.minW,
+          minH: size.minH,
+        },
+  );
+  return { panels: nextPanels, grid: nextGrid };
 }
 
 /**
@@ -174,6 +269,8 @@ function makeTab(cwd: string | null, template?: WorkspaceLayoutTemplate | null):
  */
 function isDisposableBlank(tab: WorkspaceTab): boolean {
   if (tab.cwd !== null) return false;
+  if (tab.mode !== "claude") return false;
+  if (tab.sidebarPanelId) return false;
   if (tab.focusedId) return false;
   if (tab.closedSlots && Object.keys(tab.closedSlots).length > 0) return false;
   if (tab.panelFontSizes && Object.keys(tab.panelFontSizes).length > 0) return false;
@@ -294,6 +391,7 @@ function seedTabs(): WorkspaceTab[] {
             id: newId(),
             cwd: null,
             title: titleFor(null),
+            mode: "claude",
             panels,
             grid: grid.map(sanitizeGridItem),
             panelFontSizes: {},
@@ -315,7 +413,7 @@ function seedTabs(): WorkspaceTab[] {
 // Store
 // ---------------------------------------------------------------------------
 
-export const WORKSPACES_VERSION = 1;
+export const WORKSPACES_VERSION = 3;
 
 export const useWorkspacesStore = create<WorkspacesState>()(
   persist(
@@ -337,6 +435,15 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           // otherwise fall back to the applied preset, then the default grid.
           const remembered = cwd ? get().folderLayouts[cwd] : undefined;
           const tab = makeTab(cwd, remembered ?? get().layoutTemplate);
+          tab.mode = remembered?.mode ?? "claude";
+          tab.sidebarPanelId =
+            remembered?.sidebarPanelId &&
+            tab.panels.some((panel) => panel.id === remembered.sidebarPanelId)
+              ? remembered.sidebarPanelId
+              : null;
+          tab.sidebarWidth = clampSidebarWidth(
+            remembered?.sidebarWidth ?? DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+          );
           // Restore focus mode where the folder was left, if it names a live panel.
           if (remembered?.focusedId && tab.panels.some((p) => p.id === remembered.focusedId)) {
             tab.focusedId = remembered.focusedId;
@@ -392,6 +499,11 @@ export const useWorkspacesStore = create<WorkspacesState>()(
                   panels: removed.panels,
                   grid: removed.grid.map(sanitizeGridItem),
                   panelFontSizes: removed.panelFontSizes,
+                  mode: removed.mode,
+                  sidebarPanelId: removed.sidebarPanelId ?? null,
+                  sidebarWidth: clampSidebarWidth(
+                    removed.sidebarWidth ?? DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+                  ),
                   focusedId: removed.focusedId ?? null,
                   updatedAt: Date.now(),
                 },
@@ -428,6 +540,26 @@ export const useWorkspacesStore = create<WorkspacesState>()(
 
         setActive: (id) => set({ activeId: id }),
 
+        setMode: (id, mode) =>
+          set((s) => ({ tabs: patch(s.tabs, id, (t) => ({ ...t, mode })) })),
+
+        setSidebarPanel: (id, panelId) =>
+          set((s) => ({
+            tabs: patch(s.tabs, id, (t) => ({
+              ...t,
+              sidebarPanelId:
+                panelId && t.panels.some((panel) => panel.id === panelId) ? panelId : null,
+            })),
+          })),
+
+        setSidebarWidth: (id, width) =>
+          set((s) => ({
+            tabs: patch(s.tabs, id, (t) => ({
+              ...t,
+              sidebarWidth: clampSidebarWidth(width),
+            })),
+          })),
+
         moveTab: (fromId, toId) =>
           set((s) => {
             const from = s.tabs.findIndex((t) => t.id === fromId);
@@ -444,10 +576,17 @@ export const useWorkspacesStore = create<WorkspacesState>()(
         togglePanel: (id, kind) =>
           set((s) => ({
             tabs: patch(s.tabs, id, (t) => {
-              const next = { ...t, ...togglePanelInTab(t)(kind) };
+              const targetKind = kind === "fileExplorer" ? "codeView" : kind;
+              const next = { ...t, ...togglePanelInTab(t)(targetKind) };
               // Hiding the focused panel drops focus mode with it.
               if (t.focusedId && !next.panels.some((p) => p.id === t.focusedId)) {
                 next.focusedId = null;
+              }
+              if (
+                t.sidebarPanelId &&
+                !next.panels.some((panel) => panel.id === t.sidebarPanelId)
+              ) {
+                next.sidebarPanelId = null;
               }
               return next;
             }),
@@ -461,6 +600,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               grid: t.grid.filter((item) => item.i !== panelId),
               closedSlots: rememberSlot(t, panelId),
               focusedId: t.focusedId === panelId ? null : t.focusedId,
+              sidebarPanelId: t.sidebarPanelId === panelId ? null : t.sidebarPanelId,
             })),
           })),
 
@@ -473,7 +613,15 @@ export const useWorkspacesStore = create<WorkspacesState>()(
             tabs: patch(s.tabs, id, (t) => {
               const fresh = createDefaultWorkspaceLayout();
               // A reset is a fresh start — drop remembered slots and focus too.
-              return { ...t, panels: fresh.panels, grid: fresh.grid, closedSlots: {}, focusedId: null };
+              return {
+                ...t,
+                mode: "claude",
+                panels: fresh.panels,
+                grid: fresh.grid,
+                closedSlots: {},
+                focusedId: null,
+                sidebarPanelId: null,
+              };
             }),
           }));
           useToastStore.getState().push({
@@ -487,15 +635,19 @@ export const useWorkspacesStore = create<WorkspacesState>()(
 
         loadLayout: (id, panels, grid, panelFontSizes) =>
           set((s) => ({
-            tabs: patch(s.tabs, id, (t) => ({
-              ...t,
-              panels,
-              grid: grid.map(sanitizeGridItem),
-              panelFontSizes: panelFontSizes ?? t.panelFontSizes,
-              // A preset/Loom replaces the arrangement — old slots/focus are moot.
-              closedSlots: {},
-              focusedId: null,
-            })),
+            tabs: patch(s.tabs, id, (t) => {
+              const integrated = integrateExplorerIntoEditor(panels, grid);
+              return {
+                ...t,
+                panels: integrated.panels,
+                grid: integrated.grid.map(sanitizeGridItem),
+                panelFontSizes: panelFontSizes ?? t.panelFontSizes,
+                // A preset/Loom replaces the arrangement — old slots/focus are moot.
+                closedSlots: {},
+                focusedId: null,
+                sidebarPanelId: null,
+              };
+            }),
           })),
 
         setPanelFontSize: (id, panelId, size) =>
@@ -547,31 +699,81 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           })),
 
         setLayoutTemplate: (template) =>
-          set((s) => ({
-            layoutTemplate: template
-              ? {
-                  panels: template.panels,
-                  grid: template.grid.map(sanitizeGridItem),
-                  panelFontSizes: template.panelFontSizes ?? {},
-                }
-              : null,
-            // A freshly applied preset should win everywhere — drop remembered
-            // per-folder layouts so reopened folders pick it up too.
-            folderLayouts: template ? {} : s.folderLayouts,
-          })),
+          set((s) => {
+            const integrated = template
+              ? integrateExplorerIntoEditor(template.panels, template.grid)
+              : null;
+            return {
+              layoutTemplate:
+                template && integrated
+                  ? {
+                      panels: integrated.panels,
+                      grid: integrated.grid.map(sanitizeGridItem),
+                      panelFontSizes: template.panelFontSizes ?? {},
+                    }
+                  : null,
+              // A freshly applied preset should win everywhere — drop remembered
+              // per-folder layouts so reopened folders pick it up too.
+              folderLayouts: template ? {} : s.folderLayouts,
+            };
+          }),
       };
     },
     {
       name: "retermina.workspaces",
       version: WORKSPACES_VERSION,
+      migrate: (persisted, version) => {
+        if (
+          version >= 3 ||
+          !persisted ||
+          typeof persisted !== "object"
+        ) {
+          return persisted as PersistedWorkspacesState;
+        }
+        if (version >= 2) return persisted as PersistedWorkspacesState;
+        const data = persisted as Partial<WorkspacesState>;
+        const tabs = Array.isArray(data.tabs)
+          ? data.tabs.map((tab) => ({
+              ...tab,
+              // Canvas used to be entered as a side effect of opening any tool.
+              // Start the new sidebar model Claude-first once, without losing
+              // the user's panels or grid arrangement.
+              mode: "claude" as const,
+              sidebarPanelId: null,
+              sidebarWidth: DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+              closedSlots: tab.closedSlots ?? {},
+              focusedId: tab.focusedId ?? null,
+            }))
+          : data.tabs;
+        const folderLayouts =
+          data.folderLayouts && typeof data.folderLayouts === "object"
+            ? Object.fromEntries(
+                Object.entries(data.folderLayouts).map(([cwd, layout]) => [
+                  cwd,
+                  {
+                    ...layout,
+                    mode: "claude" as const,
+                    sidebarPanelId: null,
+                    sidebarWidth: DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+                  },
+                ]),
+              )
+            : data.folderLayouts;
+        return { ...data, tabs, folderLayouts } as PersistedWorkspacesState;
+      },
       partialize: (state) => ({
         tabs: state.tabs.map((t) => ({
           id: t.id,
           cwd: t.cwd,
           title: t.title,
+          mode: t.mode,
           panels: t.panels,
           grid: t.grid.map(sanitizeGridItem),
           panelFontSizes: t.panelFontSizes,
+          sidebarPanelId: t.sidebarPanelId ?? null,
+          sidebarWidth: clampSidebarWidth(
+            t.sidebarWidth ?? DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+          ),
           closedSlots: t.closedSlots ?? {},
           focusedId: t.focusedId ?? null,
         })),
@@ -594,6 +796,7 @@ export const useWorkspacesStore = create<WorkspacesState>()(
           // Normalize closedSlots: keep only well-formed rects (old persisted
           // tabs predate the field entirely).
           .map((t) => {
+            const integrated = integrateExplorerIntoEditor(t.panels, t.grid);
             const slots: Record<string, WorkspaceGridItem> = {};
             if (t.closedSlots && typeof t.closedSlots === "object") {
               for (const [pid, slot] of Object.entries(t.closedSlots)) {
@@ -602,10 +805,37 @@ export const useWorkspacesStore = create<WorkspacesState>()(
             }
             // Keep a persisted focus only if it still names a live panel.
             const focusedId =
-              typeof t.focusedId === "string" && t.panels.some((p) => p.id === t.focusedId)
+              typeof t.focusedId === "string" &&
+              integrated.panels.some((p) => p.id === t.focusedId)
                 ? t.focusedId
                 : null;
-            return { ...t, closedSlots: slots, focusedId };
+            const mode: WorkspaceMode = t.mode === "canvas" ? "canvas" : "claude";
+            const sidebarPanelId =
+              typeof t.sidebarPanelId === "string" &&
+              integrated.panels.some((panel) => panel.id === t.sidebarPanelId)
+                ? t.sidebarPanelId
+                : t.panels.some(
+                      (panel) =>
+                        panel.id === t.sidebarPanelId &&
+                        panel.kind === "fileExplorer",
+                    )
+                  ? PANEL_IDS.codeView
+                  : null;
+            const sidebarWidth = clampSidebarWidth(
+              typeof t.sidebarWidth === "number"
+                ? t.sidebarWidth
+                : DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+            );
+            return {
+              ...t,
+              mode,
+              panels: integrated.panels,
+              grid: integrated.grid.map(sanitizeGridItem),
+              sidebarPanelId,
+              sidebarWidth,
+              closedSlots: slots,
+              focusedId,
+            };
           });
         const template =
           data?.layoutTemplate &&
@@ -629,18 +859,39 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               isWorkspacePanelArray(layout.panels) &&
               isWorkspaceGridArray(layout.grid)
             ) {
+              const integrated = integrateExplorerIntoEditor(
+                layout.panels,
+                layout.grid,
+              );
               folderLayouts[cwd] = {
-                panels: layout.panels,
-                grid: layout.grid.map(sanitizeGridItem),
+                panels: integrated.panels,
+                grid: integrated.grid.map(sanitizeGridItem),
                 panelFontSizes:
                   layout.panelFontSizes && typeof layout.panelFontSizes === "object"
                     ? layout.panelFontSizes
                     : {},
                 focusedId:
                   typeof layout.focusedId === "string" &&
-                  layout.panels.some((p) => p.id === layout.focusedId)
+                  integrated.panels.some((p) => p.id === layout.focusedId)
                     ? layout.focusedId
                     : null,
+                mode: layout.mode === "canvas" ? "canvas" : "claude",
+                sidebarPanelId:
+                  typeof layout.sidebarPanelId === "string" &&
+                  integrated.panels.some((panel) => panel.id === layout.sidebarPanelId)
+                    ? layout.sidebarPanelId
+                    : layout.panels.some(
+                          (panel) =>
+                            panel.id === layout.sidebarPanelId &&
+                            panel.kind === "fileExplorer",
+                        )
+                      ? PANEL_IDS.codeView
+                    : null,
+                sidebarWidth: clampSidebarWidth(
+                  typeof layout.sidebarWidth === "number"
+                    ? layout.sidebarWidth
+                    : DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+                ),
                 updatedAt: typeof layout.updatedAt === "number" ? layout.updatedAt : 0,
               };
             }

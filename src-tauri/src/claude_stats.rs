@@ -98,8 +98,13 @@ fn u64_field(obj: &Value, key: &str) -> u64 {
     obj.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
 }
 
-/// Sum token usage across all JSONL sessions for `cwd`.
-fn read_usage(cwd: &str) -> ClaudeTokenUsage {
+/// Sum token usage across all JSONL sessions for `cwd`. When `session_id` is
+/// given, the context-window fill and model are read from *that* session
+/// specifically (the one the panel owns) rather than whichever file was touched
+/// most recently — otherwise a second, unrelated Claude running in the same repo
+/// (e.g. the developer's own CLI session) would make a fresh panel read as
+/// "half full".
+fn read_usage(cwd: &str, session_id: Option<&str>) -> ClaudeTokenUsage {
     let zero = ClaudeTokenUsage {
         input_tokens: 0,
         output_tokens: 0,
@@ -162,9 +167,21 @@ fn read_usage(cwd: &str) -> ClaudeTokenUsage {
         + cache_create as f64 * 3.75)
         / 1_000_000.0;
 
-    let (context_tokens, model) = newest
-        .map(|(_, path)| latest_context(&path))
-        .unwrap_or((0, None));
+    // Context fill reflects the panel's own session. A fresh session with no
+    // transcript yet is correctly empty (0), never another session's footprint.
+    let (context_tokens, model) = match session_id {
+        Some(sid) => {
+            let path = dir.join(format!("{sid}.jsonl"));
+            if path.is_file() {
+                latest_context(&path)
+            } else {
+                (0, None)
+            }
+        }
+        None => newest
+            .map(|(_, path)| latest_context(&path))
+            .unwrap_or((0, None)),
+    };
 
     ClaudeTokenUsage {
         input_tokens: input,
@@ -182,14 +199,13 @@ fn read_usage(cwd: &str) -> ClaudeTokenUsage {
 /// Tauri command: return token usage totals for the given workspace directory.
 /// Returns zeroed totals (not an error) when no Claude Code history exists.
 #[tauri::command]
-pub fn get_claude_token_usage(cwd: String) -> ClaudeTokenUsage {
-    read_usage(&cwd)
+pub fn get_claude_token_usage(cwd: String, session_id: Option<String>) -> ClaudeTokenUsage {
+    read_usage(&cwd, session_id.as_deref())
 }
 
-/// Claude Code's six built-in UI theme identifiers. We only ever set the two
-/// `*-ansi` variants (so Claude inherits the terminal's 16-colour palette and
-/// blends with the active Retermina engine), but the full list guards the
-/// command against writing an unknown value.
+/// Claude Code's six built-in UI theme identifiers. Retermina currently selects
+/// the stock light/dark variants to retain Claude's full colour treatment; the
+/// complete list still guards the command against writing an unknown value.
 const CLAUDE_THEMES: [&str; 6] = [
     "light",
     "dark",

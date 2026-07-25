@@ -249,13 +249,22 @@ interface MenuState { x: number; y: number; entry: DirEntry; }
 interface ContextMenuProps {
   menu: MenuState;
   onClose: () => void;
+  onOpen: (path: string) => void;
   onRename: (entry: DirEntry) => void;
   onDelete: (entry: DirEntry) => void;
   onNewFile: (parentPath: string) => void;
   onNewFolder: (parentPath: string) => void;
 }
 
-function ContextMenu({ menu, onClose, onRename, onDelete, onNewFile, onNewFolder }: ContextMenuProps) {
+function ContextMenu({
+  menu,
+  onClose,
+  onOpen,
+  onRename,
+  onDelete,
+  onNewFile,
+  onNewFolder,
+}: ContextMenuProps) {
   const { entry } = menu;
 
   function item(label: string, icon: Parameters<typeof Icon>[0]["name"], action: () => void, danger = false) {
@@ -286,7 +295,7 @@ function ContextMenu({ menu, onClose, onRename, onDelete, onNewFile, onNewFolder
         </>
       ) : (
         <>
-          {item("Open", "code", () => {})}
+          {item("Open", "code", () => onOpen(entry.path))}
           <div className="rt-divider my-1 mx-1 h-px" />
           {item("Rename", "file", () => onRename(entry))}
           <div className="rt-divider my-1 mx-1 h-px" />
@@ -601,6 +610,7 @@ export function FileExplorerPanel({ cwd }: FileExplorerPanelProps) {
         <ContextMenu
           menu={menuState}
           onClose={() => setMenuState(null)}
+          onOpen={openFile}
           onRename={startRename}
           onDelete={handleDelete}
           onNewFile={startNewFile}

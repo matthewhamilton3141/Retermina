@@ -526,6 +526,414 @@ body {
   background-color: var(--rt-terminal-bg);
 }
 
+.rt-claude-stage {
+  isolation: isolate;
+  background:
+    radial-gradient(
+      ellipse 62% 34% at 50% -8%,
+      color-mix(in srgb, var(--rt-accent) 10%, transparent),
+      transparent 72%
+    ),
+    var(--rt-terminal-bg);
+}
+
+[data-theme="glass"] .rt-claude-stage {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+.rt-workspace-rail {
+  color: var(--rt-text-faint);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--rt-accent) 6%, transparent),
+      transparent 24%
+    ),
+    var(--rt-surface-strong);
+  border-right: var(--rt-border-width) solid var(--rt-border);
+}
+
+.rt-workspace-rail-button {
+  position: relative;
+  display: flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--rt-text-faint);
+  border: 1px solid transparent;
+  border-radius: calc(var(--rt-radius-sm) + 1px);
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.rt-workspace-rail-button:hover {
+  color: var(--rt-text);
+  background-color: var(--rt-surface-hover);
+  transform: translateX(1px);
+}
+
+.rt-workspace-rail-button-active {
+  color: var(--rt-accent);
+  background-color: var(--rt-accent-soft);
+  border-color: color-mix(in srgb, var(--rt-accent) 18%, var(--rt-border));
+}
+
+.rt-workspace-rail-button-active::before {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: -6px;
+  width: 2px;
+  content: "";
+  background-color: var(--rt-accent);
+  border-radius: 999px;
+  box-shadow: 0 0 9px color-mix(in srgb, var(--rt-accent) 55%, transparent);
+}
+
+.rt-workspace-sidebar {
+  background-color: var(--rt-surface-strong);
+  border-right: var(--rt-border-width) solid var(--rt-border);
+  box-shadow: 12px 0 32px color-mix(in srgb, var(--rt-bg) 22%, transparent);
+}
+
+.rt-workspace-sidebar-resizer::after {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  bottom: 0;
+  width: 1px;
+  content: "";
+  background-color: transparent;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.rt-workspace-sidebar-resizer:hover::after {
+  background-color: var(--rt-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--rt-accent) 42%, transparent);
+}
+
+.rt-code-workbench {
+  background-color: var(--rt-subsurface);
+}
+
+.rt-code-explorer {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--rt-accent) 4%, transparent),
+      transparent 22%
+    ),
+    var(--rt-surface);
+}
+
+.rt-code-explorer > .rt-subsurface {
+  background-color: transparent;
+}
+
+.rt-code-explorer-resizer {
+  background-color: var(--rt-border);
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.rt-code-explorer-resizer::after {
+  position: absolute;
+  inset: 0 -3px;
+  content: "";
+}
+
+.rt-code-explorer-resizer:hover,
+.rt-code-explorer-resizing {
+  background-color: var(--rt-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--rt-accent) 38%, transparent);
+}
+
+[data-theme="glass"] .rt-workspace-rail,
+[data-theme="glass"] .rt-workspace-sidebar {
+  background-color: rgba(255, 255, 255, 0.82);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+/* Claude agent surface: motion communicates state instead of decorating every
+ * control. New transcript events lift in once; only the currently-running row
+ * keeps moving, with a narrow scan that reads like an active execution lane. */
+@keyframes rt-claude-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes rt-claude-scan {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(220%); }
+}
+
+@keyframes rt-claude-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rt-claude-question-breathe {
+  0%, 100% { box-shadow: 0 0 0 rgba(245, 158, 11, 0); }
+  50% { box-shadow: 0 0 18px rgba(245, 158, 11, 0.12); }
+}
+
+@keyframes rt-claude-thinking-bar {
+  0%, 100% { height: 25%; opacity: 0.35; }
+  50% { height: 100%; opacity: 1; }
+}
+
+@keyframes rt-claude-orb {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-4px) rotate(2deg); }
+}
+
+/* Sweeps the accent band through the clipped text. Must animate
+ * background-position, not transform — translating the label would slide the
+ * whole "Claude is working" text across the panel instead of shimmering it. */
+@keyframes rt-claude-shimmer {
+  from { background-position: 180% 0; }
+  to { background-position: -80% 0; }
+}
+
+.rt-claude-item {
+  animation: rt-claude-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.rt-claude-tool-row {
+  position: relative;
+}
+
+.rt-claude-tool-running::before {
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    color-mix(in srgb, currentColor 8%, transparent),
+    transparent
+  );
+  animation: rt-claude-scan 1.8s ease-in-out infinite;
+}
+
+.rt-claude-tool-orbit {
+  position: relative;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.rt-claude-tool-orbit::after {
+  position: absolute;
+  inset: -2px;
+  content: "";
+  border: 1px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 0.55rem;
+  opacity: 0.8;
+  animation: rt-claude-orbit 1.15s linear infinite;
+}
+
+.rt-claude-question {
+  animation:
+    rt-claude-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    rt-claude-question-breathe 2.4s ease-in-out infinite;
+}
+
+.rt-claude-avatar,
+.rt-claude-empty-orb {
+  color: var(--rt-accent);
+  background:
+    radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--rt-accent) 26%, transparent), transparent 58%),
+    var(--rt-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--rt-accent) 24%, var(--rt-border));
+}
+
+.rt-claude-empty-orb {
+  animation: rt-claude-orb 3.2s ease-in-out infinite;
+}
+
+.rt-claude-thinking i {
+  display: block;
+  width: 2px;
+  min-height: 2px;
+  border-radius: 999px;
+  background: var(--rt-accent);
+  animation: rt-claude-thinking-bar 800ms ease-in-out infinite;
+}
+
+.rt-claude-thinking i:nth-child(2) { animation-delay: 120ms; }
+.rt-claude-thinking i:nth-child(3) { animation-delay: 240ms; }
+
+.rt-claude-thinking-label {
+  background: linear-gradient(
+    90deg,
+    var(--rt-text-muted),
+    var(--rt-accent),
+    var(--rt-text-muted)
+  );
+  background-size: 220% 100%;
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: rt-claude-shimmer 2.2s linear infinite;
+}
+
+.rt-claude-command-trigger {
+  color: var(--rt-accent);
+  background-color: color-mix(
+    in srgb,
+    var(--rt-accent-soft) 58%,
+    var(--rt-surface-strong)
+  );
+  border-color: color-mix(in srgb, var(--rt-accent) 32%, var(--rt-border));
+  border-radius: var(--rt-radius-sm);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--rt-bg) 14%, transparent);
+}
+
+.rt-claude-command-trigger:hover {
+  color: var(--rt-accent);
+  background-color: color-mix(
+    in srgb,
+    var(--rt-accent-soft) 86%,
+    var(--rt-surface-strong)
+  );
+  border-color: color-mix(in srgb, var(--rt-accent) 52%, var(--rt-border));
+}
+
+.rt-claude-interrupt {
+  color: var(--rt-accent);
+  background-color: var(--rt-accent-soft);
+  border: var(--rt-border-width) solid var(--rt-border);
+}
+
+.rt-claude-interrupt:hover {
+  color: var(--rt-accent);
+  background-color: var(--rt-surface-hover);
+  border-color: var(--rt-accent);
+}
+
+.rt-claude-composer {
+  position: relative;
+  flex: 1 1 56rem;
+  width: auto;
+  max-width: 56rem;
+  min-width: 0;
+  min-height: 36px;
+  overflow: hidden;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 180ms ease;
+}
+
+.rt-input.rt-claude-composer {
+  background-color: color-mix(
+    in srgb,
+    var(--rt-surface-strong) 72%,
+    var(--rt-subsurface)
+  );
+  border-color: color-mix(in srgb, var(--rt-text) 9%, var(--rt-border));
+  border-radius: var(--rt-radius-sm);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--rt-bg) 18%, transparent),
+    0 5px 18px color-mix(in srgb, var(--rt-bg) 16%, transparent);
+}
+
+.rt-input.rt-claude-composer:hover {
+  border-color: color-mix(in srgb, var(--rt-text) 14%, var(--rt-border));
+}
+
+.rt-input.rt-claude-composer:focus-within {
+  background-color: var(--rt-surface-strong);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--rt-bg) 16%, transparent),
+    0 7px 22px color-mix(in srgb, var(--rt-bg) 20%, transparent);
+}
+
+.rt-input.rt-claude-composer-drop {
+  border-color: color-mix(in srgb, var(--rt-accent) 55%, var(--rt-border));
+  background-color: color-mix(in srgb, var(--rt-accent-soft) 70%, var(--rt-surface-strong));
+}
+
+.rt-claude-composer::after {
+  position: absolute;
+  bottom: 0;
+  left: 0.75rem;
+  width: 0;
+  height: 2px;
+  content: "";
+  pointer-events: none;
+  background: var(--rt-accent);
+  border-radius: 999px;
+  opacity: 0;
+  transition:
+    width 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 120ms ease;
+}
+
+.rt-claude-composer:focus-within::after {
+  width: 2.5rem;
+  opacity: 0.72;
+}
+
+.rt-claude-composer-shell {
+  position: relative;
+  z-index: 20;
+  background-color: var(--rt-surface-strong);
+  border-top: var(--rt-border-width) solid var(--rt-border);
+  box-shadow: 0 -8px 24px color-mix(in srgb, var(--rt-bg) 10%, transparent);
+}
+
+.rt-claude-composer textarea:focus,
+.rt-claude-composer textarea:focus-visible {
+  outline: none;
+}
+
+.rt-claude-composer textarea::selection {
+  color: var(--rt-text);
+  background: color-mix(in srgb, var(--rt-accent) 22%, transparent);
+}
+
+[data-theme="glass"] .rt-claude-composer-shell {
+  background-color: rgba(255, 255, 255, 0.82);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+.rt-input.rt-claude-composer-active {
+  border-color: color-mix(in srgb, var(--rt-accent) 36%, var(--rt-border));
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--rt-bg) 16%, transparent),
+    0 7px 22px color-mix(in srgb, var(--rt-bg) 20%, transparent);
+}
+
+.rt-claude-composer-active::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 38%;
+  height: 1px;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--rt-accent), transparent);
+  animation: rt-claude-scan 2s ease-in-out infinite;
+}
+
 .rt-menu {
   background-color: var(--rt-surface-strong);
   border: var(--rt-border-width) solid var(--rt-border);
@@ -533,6 +941,28 @@ body {
   box-shadow: var(--rt-shadow-panel);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+.rt-claude-dock {
+  position: relative;
+  z-index: 30;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--rt-accent) 5%, transparent),
+      transparent 28%
+    ),
+    var(--rt-surface-strong);
+  box-shadow: 0 -8px 28px color-mix(in srgb, var(--rt-bg) 18%, transparent);
+}
+
+/* Claude's bottom pickers escape the grid through a portal. In Glass they
+ * retain the project's required 20px frosted treatment and subtle white edge. */
+[data-theme="glass"] .rt-menu.rt-claude-menu {
+  background-color: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
 }
 
 .rt-menu-item {
@@ -687,6 +1117,47 @@ body {
 .retermina-grid.rt-has-focus .react-grid-item:not(.rt-panel-focused) {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* In Claude mode the same mounted RGL children become a tabbed tool drawer.
+ * Keeping one DOM tree means shells, preview detection, and other live panel
+ * state survive both sidebar switches and full-canvas expansion. */
+.retermina-grid.rt-sidebar-grid {
+  height: 100% !important;
+}
+
+.retermina-grid.rt-sidebar-grid .react-grid-item {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  z-index: 1;
+}
+
+.retermina-grid.rt-sidebar-grid .react-grid-item.rt-sidebar-panel-active {
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.retermina-grid.rt-sidebar-grid .react-grid-item.rt-sidebar-panel-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.retermina-grid.rt-sidebar-grid .react-resizable-handle {
+  display: none;
+}
+
+.retermina-grid.rt-sidebar-grid .rt-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.retermina-grid.rt-sidebar-grid .panel-drag-handle {
+  cursor: default;
 }
 
 /* Side/bottom cursors */

@@ -224,21 +224,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTerminalBg(resolveCssColor("--rt-terminal-bg"));
   }, [theme.id, accentColor, fontId, customFonts, uiScale, motionPreference, highContrast, reduceTransparency, backdropStyle, customBackdrop]);
 
-  // Overlay accent-dependent terminal colours so the terminal and the Claude
-  // Code panel track the live accent choice.
+  // Overlay accent-dependent terminal colours so terminal applications track
+  // the live accent choice.
   //
   // cursor + selection always follow the accent (the selection is a SOLID
   // accent fill with contrast-aware text, mirroring the web `::selection` look
   // in index.css so a highlight reads identically in the Terminal and Code).
   //
   // When the user picks a CUSTOM accent we additionally retint the ANSI
-  // "accent-hue" slots — blue and magenta, normal + bright. Terminal UIs,
-  // including the embedded Claude Code CLI, draw their primary/brand accent
-  // from these slots, so without this a blue accent still shows the engine's
-  // default violet (e.g. Sleek's magenta `#c084fc`). Red / green / yellow /
-  // cyan are deliberately left alone so errors, success, warnings, and info
-  // keep their conventional meaning. With no custom accent we leave the
-  // engine's hand-tuned palette exactly as authored.
+  // "accent-hue" slots — blue and magenta, normal + bright. Terminal UIs draw
+  // their primary accents from these slots. Red / green / yellow / cyan are
+  // deliberately left alone so errors, success, warnings, and info keep their
+  // conventional meaning. With no custom accent we leave the engine's
+  // hand-tuned palette exactly as authored.
   const terminalTheme = useMemo<ITheme>(() => {
     const hasCustomAccent = !!accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor);
     const accent = hasCustomAccent ? accentColor! : theme.accentColor;

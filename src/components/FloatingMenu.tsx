@@ -28,6 +28,8 @@ export interface FloatingMenuProps {
   /** Anchor point in viewport coordinates (e.g. event.clientX / clientY). */
   x: number;
   y: number;
+  /** Force the surface above/below the anchor, or let viewport space decide. */
+  placement?: "auto" | "above" | "below";
   /** Called when the user clicks away or presses Escape. */
   onClose: () => void;
   children: ReactNode;
@@ -38,29 +40,62 @@ export interface FloatingMenuProps {
 /** Gap kept between the menu and the viewport edge when clamping. */
 const EDGE_MARGIN = 8;
 
-export function FloatingMenu({ x, y, onClose, children, className }: FloatingMenuProps) {
+export function FloatingMenu({
+  x,
+  y,
+  placement = "auto",
+  onClose,
+  children,
+  className,
+}: FloatingMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   // Start at the requested point; the layout effect corrects it before paint.
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: x, top: y });
 
-  // Flip/clamp so the menu never spills past the viewport edges. Runs before
-  // paint, so the user never sees the unclamped position.
+  // Flip/clamp so the menu never spills past the viewport edges. ResizeObserver
+  // keeps a menu anchored when filtering or async content changes its size.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
 
-    let left = x;
-    let top = y;
-    if (left + width + EDGE_MARGIN > window.innerWidth) {
-      // Prefer opening to the left of the cursor; clamp if still overflowing.
-      left = Math.max(EDGE_MARGIN, Math.min(x - width, window.innerWidth - width - EDGE_MARGIN));
-    }
-    if (top + height + EDGE_MARGIN > window.innerHeight) {
-      top = Math.max(EDGE_MARGIN, Math.min(y - height, window.innerHeight - height - EDGE_MARGIN));
-    }
-    setPos({ left, top });
-  }, [x, y]);
+    const updatePosition = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN);
+      const maxTop = Math.max(EDGE_MARGIN, window.innerHeight - height - EDGE_MARGIN);
+
+      let left = x;
+      if (left + width + EDGE_MARGIN > window.innerWidth) {
+        // Prefer opening to the left of the anchor; clamp if still overflowing.
+        left = x - width;
+      }
+      left = Math.max(EDGE_MARGIN, Math.min(left, maxLeft));
+
+      let top =
+        placement === "above"
+          ? y - height
+          : y;
+      if (placement === "auto" && top + height + EDGE_MARGIN > window.innerHeight) {
+        top = y - height;
+      }
+      top = Math.max(EDGE_MARGIN, Math.min(top, maxTop));
+
+      setPos((current) =>
+        current.left === left && current.top === top ? current : { left, top },
+      );
+    };
+
+    updatePosition();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updatePosition);
+    observer?.observe(el);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [placement, x, y]);
 
   // Escape closes the menu.
   useEffect(() => {

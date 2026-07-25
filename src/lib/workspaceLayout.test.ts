@@ -107,10 +107,10 @@ describe("fitIntoColumn", () => {
 
   it("fills the column exactly, spreading remainder rows to the top panels", () => {
     // Three panels in a 10-row column → 4 + 3 + 3.
-    let grid = fitIntoColumn([], "a", "fileExplorer");
+    let grid = fitIntoColumn([], "a", "terminal");
     grid = fitIntoColumn(grid, "b", "localhost");
-    grid = fitIntoColumn(grid, "c", "tasks"); // all three prefer the left column
-    const col = grid.filter((g) => g.x === PANEL_COLUMN.fileExplorer.x).sort((p, q) => p.y - q.y);
+    grid = fitIntoColumn(grid, "c", "tasks"); // all three prefer the utility column
+    const col = grid.filter((g) => g.x === PANEL_COLUMN.terminal.x).sort((p, q) => p.y - q.y);
     expect(col.map((g) => g.h)).toEqual([4, 3, 3]);
     expect(col.map((g) => g.y)).toEqual([0, 4, 7]);
     expect(noOverlaps(grid)).toBe(true);

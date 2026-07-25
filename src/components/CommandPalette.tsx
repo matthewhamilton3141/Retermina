@@ -70,7 +70,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   // Store hooks
   const openTerminal  = useAppStore((s) => s.openTerminal);
   const panels        = useWorkspaceStore((s) => s.panels);
-  const togglePanel   = useWorkspaceStore((s) => s.togglePanel);
+  const mode          = useWorkspaceStore((s) => s.mode);
+  const sidebarPanelId = useWorkspaceStore((s) => s.sidebarPanelId);
+  const openPanel     = useWorkspaceStore((s) => s.openPanel);
+  const closeSidebar  = useWorkspaceStore((s) => s.closeSidebar);
   const loadLayout    = useWorkspaceStore((s) => s.loadLayout);
   const recentEntries = useRecentStore((s) => s.entries);
   const presets       = usePresetsStore((s) => s.presets);
@@ -91,23 +94,24 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   ];
   const openSettings = (tab: string) => { setSettingsTab(tab); setSettingsOpen(true); };
 
-  const visibleKinds = new Set(panels.map((p) => p.kind));
-
   // ── Build full action list ──────────────────────────────────────────────
 
   const allActions = useMemo<PaletteAction[]>(() => {
     const actions: PaletteAction[] = [];
 
-    // Panel toggles
-    for (const kind of PANEL_KINDS) {
+    // Auxiliary tools open beside Claude instead of replacing the main stage.
+    for (const kind of PANEL_KINDS.filter(
+      (value) => value !== "claudeCode" && value !== "fileExplorer",
+    )) {
       const meta   = PANEL_META[kind];
-      const active = visibleKinds.has(kind);
+      const panel  = panels.find((item) => item.kind === kind);
+      const active = mode === "claude" && panel?.id === sidebarPanelId;
       actions.push({
         id:       `panel-${kind}`,
-        title:    `${active ? "Hide" : "Show"} ${meta.label}`,
+        title:    `${active ? "Close" : "Open"} ${meta.label} sidebar`,
         group:    "Panels",
         icon:     meta.icon,
-        onRun:    () => togglePanel(kind),
+        onRun:    () => active ? closeSidebar() : openPanel(kind),
       });
     }
 
@@ -179,7 +183,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
     return actions;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panels, presets, looms, recentEntries, themes, themeId]);
+  }, [panels, mode, sidebarPanelId, presets, looms, recentEntries, themes, themeId]);
 
   // ── Filter + sort ───────────────────────────────────────────────────────
 

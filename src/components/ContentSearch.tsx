@@ -12,7 +12,6 @@ import Icon from "./Icon";
 import { searchInFiles, type FileMatches } from "../lib/fs";
 import { useEditorStore } from "../store/editor";
 import { useWorkspaceStore } from "../store/workspace";
-import { PANEL_IDS } from "../lib/workspaceLayout";
 
 /** Debounce (ms) before firing a search as the user types. */
 const SEARCH_DEBOUNCE = 250;
@@ -39,8 +38,7 @@ export function ContentSearch({ open, onClose, cwd }: ContentSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const openFile = useEditorStore((s) => s.openFile);
-  const panels = useWorkspaceStore((s) => s.panels);
-  const togglePanel = useWorkspaceStore((s) => s.togglePanel);
+  const openPanel = useWorkspaceStore((s) => s.openPanel);
 
   // Reset and focus whenever the overlay opens.
   useEffect(() => {
@@ -81,7 +79,7 @@ export function ContentSearch({ open, onClose, cwd }: ContentSearchProps) {
   const choose = (m: FlatMatch) => {
     if (!cwd) return;
     const abs = `${cwd.replace(/\/$/, "")}/${m.path}`;
-    if (!panels.some((p) => p.id === PANEL_IDS.codeView)) togglePanel("codeView");
+    openPanel("codeView");
     void openFile(abs, m.line);
     onClose();
   };

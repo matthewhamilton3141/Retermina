@@ -146,11 +146,19 @@ export interface ClaudeTokenUsage {
 }
 
 /**
- * Return cumulative token usage for all Claude Code sessions in `cwd`.
- * Returns zeroed totals when no history exists for the project.
+ * Return token usage for Claude Code sessions in `cwd`. Totals are cumulative
+ * across the project; the context-window fill and model reflect `sessionId`
+ * specifically (the panel's own session) so a fresh panel reads empty even when
+ * another Claude is running in the same repo. Zeroed when no history exists.
  */
-export async function getClaudeTokenUsage(cwd: string): Promise<ClaudeTokenUsage> {
-  return invoke<ClaudeTokenUsage>("get_claude_token_usage", { cwd });
+export async function getClaudeTokenUsage(
+  cwd: string,
+  sessionId?: string | null,
+): Promise<ClaudeTokenUsage> {
+  return invoke<ClaudeTokenUsage>("get_claude_token_usage", {
+    cwd,
+    sessionId: sessionId ?? null,
+  });
 }
 
 /**

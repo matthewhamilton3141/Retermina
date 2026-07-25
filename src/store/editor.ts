@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { readFile, writeFile } from "../lib/fs";
 import { useSessionStore } from "./session";
 
@@ -142,3 +143,48 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 }));
+
+interface EditorLayoutState {
+  explorerVisible: boolean;
+  explorerWidth: number;
+  setExplorerVisible: (visible: boolean) => void;
+  setExplorerWidth: (width: number) => void;
+}
+
+const clampExplorerWidth = (width: number) =>
+  Math.round(Math.max(180, Math.min(420, width)));
+
+/** Persist only editor chrome; open-file content continues to live in EditorState. */
+export const useEditorLayoutStore = create<EditorLayoutState>()(
+  persist(
+    (set) => ({
+      explorerVisible: true,
+      explorerWidth: 238,
+      setExplorerVisible: (explorerVisible) => set({ explorerVisible }),
+      setExplorerWidth: (explorerWidth) =>
+        set({ explorerWidth: clampExplorerWidth(explorerWidth) }),
+    }),
+    {
+      name: "retermina.editor-layout",
+      version: 1,
+      partialize: (state) => ({
+        explorerVisible: state.explorerVisible,
+        explorerWidth: state.explorerWidth,
+      }),
+      merge: (persisted, current) => {
+        const data = persisted as Partial<EditorLayoutState> | undefined;
+        return {
+          ...current,
+          explorerVisible:
+            typeof data?.explorerVisible === "boolean"
+              ? data.explorerVisible
+              : current.explorerVisible,
+          explorerWidth:
+            typeof data?.explorerWidth === "number"
+              ? clampExplorerWidth(data.explorerWidth)
+              : current.explorerWidth,
+        };
+      },
+    },
+  ),
+);

@@ -12,12 +12,17 @@
  * Components rendered once per tab (WorkspaceLayout, PanelFrame) must NOT use
  * this shim; they address their own tab by id through useWorkspacesStore.
  */
-import { useWorkspacesStore } from "./workspaces";
+import {
+  EDITOR_WORKSPACE_SIDEBAR_WIDTH,
+  useWorkspacesStore,
+} from "./workspaces";
 import type {
   PanelKind,
   WorkspaceGridItem,
   WorkspacePanel,
 } from "../lib/workspaceLayout";
+import { PANEL_IDS } from "../lib/workspaceLayout";
+import type { WorkspaceMode } from "./workspaces";
 
 // Stable empty fallbacks so selectors don't see a fresh reference each render.
 const EMPTY_PANELS: WorkspacePanel[] = [];
@@ -28,8 +33,12 @@ export interface ActiveWorkspace {
   panels: WorkspacePanel[];
   grid: WorkspaceGridItem[];
   panelFontSizes: Record<string, number>;
+  mode: WorkspaceMode;
+  sidebarPanelId: string | null;
   setGrid: (grid: WorkspaceGridItem[]) => void;
   togglePanel: (kind: PanelKind) => void;
+  openPanel: (kind: PanelKind) => void;
+  closeSidebar: () => void;
   closePanel: (id: string) => void;
   resetLayout: () => void;
   loadLayout: (panels: WorkspacePanel[], grid: WorkspaceGridItem[]) => void;
@@ -46,6 +55,34 @@ const actions = {
   togglePanel: (kind: PanelKind) => {
     const s = useWorkspacesStore.getState();
     if (s.activeId) s.togglePanel(s.activeId, kind);
+  },
+  openPanel: (kind: PanelKind) => {
+    const s = useWorkspacesStore.getState();
+    if (!s.activeId) return;
+    if (kind === "claudeCode") {
+      s.setMode(s.activeId, "claude");
+      s.setSidebarPanel(s.activeId, null);
+      return;
+    }
+    const targetKind = kind === "fileExplorer" ? "codeView" : kind;
+    const tab = s.tabs.find((item) => item.id === s.activeId);
+    const panel = tab?.panels.find((item) => item.kind === targetKind);
+    if (!panel) s.togglePanel(s.activeId, targetKind);
+    if (targetKind === "codeView") {
+      s.setSidebarWidth(
+        s.activeId,
+        Math.max(
+          tab?.sidebarWidth ?? EDITOR_WORKSPACE_SIDEBAR_WIDTH,
+          EDITOR_WORKSPACE_SIDEBAR_WIDTH,
+        ),
+      );
+    }
+    s.setMode(s.activeId, "claude");
+    s.setSidebarPanel(s.activeId, panel?.id ?? PANEL_IDS[targetKind]);
+  },
+  closeSidebar: () => {
+    const s = useWorkspacesStore.getState();
+    if (s.activeId) s.setSidebarPanel(s.activeId, null);
   },
   closePanel: (id: string) => {
     const s = useWorkspacesStore.getState();
@@ -71,6 +108,8 @@ function buildActive(state: ReturnType<typeof useWorkspacesStore.getState>): Act
     panels: tab?.panels ?? EMPTY_PANELS,
     grid: tab?.grid ?? EMPTY_GRID,
     panelFontSizes: tab?.panelFontSizes ?? EMPTY_FONTS,
+    mode: tab?.mode ?? "claude",
+    sidebarPanelId: tab?.sidebarPanelId ?? null,
     ...actions,
   };
 }

@@ -1,9 +1,11 @@
+mod claude_agent;
+mod claude_events;
 mod claude_stats;
 mod fonts;
 mod fs;
 mod iris;
-mod presets;
 mod localhost;
+mod presets;
 mod pty;
 mod terminal_import;
 mod vscode;
@@ -16,6 +18,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(pty::PtyManager::default())
+        .manage(claude_events::ClaudeEventManager::default())
+        .manage(claude_agent::ClaudeAgentManager::default())
         .invoke_handler(tauri::generate_handler![
             vscode::get_recent_workspaces,
             pty::create_pty_session,
@@ -38,6 +42,12 @@ pub fn run() {
             fs::list_files,
             fs::search_in_files,
             terminal_import::get_terminal_cwd,
+            claude_events::watch_claude_session,
+            claude_events::stop_claude_session_watch,
+            claude_agent::start_claude_agent,
+            claude_agent::send_claude_agent,
+            claude_agent::interrupt_claude_agent,
+            claude_agent::stop_claude_agent,
             claude_stats::get_claude_token_usage,
             claude_stats::set_claude_theme,
             fonts::save_font,

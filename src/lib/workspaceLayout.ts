@@ -104,7 +104,7 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
   terminal: { icon: "terminal", label: "Terminal" },
   fileExplorer: { icon: "explorer", label: "Explorer" },
   localhost: { icon: "localhost", label: "Localhost" },
-  codeView: { icon: "code", label: "Code" },
+  codeView: { icon: "code", label: "Editor" },
   claudeCode: { icon: "claudeLogo", label: "Claude Code" },
   livePreview: { icon: "preview", label: "Preview" },
   gitDiff: { icon: "gitDiff", label: "Changes" },
@@ -124,10 +124,9 @@ export const PANEL_META: Record<PanelKind, PanelMeta> = {
  * of slack keeps every panel actually resizable both wider/taller and
  * narrower/shorter from its default size.
  */
-// Grid is divided into three natural columns:
-//   Left  (x 0–2,  w=3): Explorer / Localhost
-//   Centre(x 3–7,  w=5): Code / Live Preview
-//   Right (x 8–11, w=4): Terminal / Claude Code
+// The integrated editor owns the main eight columns; utility panels share the
+// right four. Explorer now lives inside the editor instead of occupying a
+// separate grid item.
 //
 // DEFAULT_PANEL_SIZE entries are sized to fit their column so that
 // findFreeSlot drops a re-added panel back into the correct column
@@ -138,34 +137,32 @@ export const DEFAULT_PANEL_SIZE: Record<
 > = {
   //              w   h   minW  minH
   terminal:    { w: 4, h: 5, minW: 3, minH: 2 },  // right column, half-height
-  fileExplorer:{ w: 3, h: 5, minW: 2, minH: 2 },  // left column
-  codeView:    { w: 5, h: 8, minW: 3, minH: 2 },  // centre column
-  localhost:   { w: 3, h: 4, minW: 2, minH: 2 },  // left column, bottom
+  fileExplorer:{ w: 3, h: 5, minW: 2, minH: 2 },  // legacy standalone explorer
+  codeView:    { w: 8, h: 10, minW: 5, minH: 3 }, // editor + integrated explorer
+  localhost:   { w: 4, h: 4, minW: 2, minH: 2 },  // utility column
   claudeCode:  { w: 4, h: 5, minW: 3, minH: 2 },  // right column, half-height
-  livePreview: { w: 5, h: 6, minW: 3, minH: 3 },  // centre column
-  gitDiff:     { w: 5, h: 8, minW: 3, minH: 3 },  // centre column
-  tasks:       { w: 3, h: 5, minW: 2, minH: 2 },  // left column
+  livePreview: { w: 8, h: 6, minW: 4, minH: 3 },  // main work area
+  gitDiff:     { w: 8, h: 8, minW: 4, minH: 3 },  // main work area
+  tasks:       { w: 4, h: 5, minW: 2, minH: 2 },  // utility column
 };
 
 const DEFAULT_VISIBLE_PANEL_KINDS: readonly PanelKind[] = [
-  "fileExplorer",
-  "terminal",
   "codeView",
+  "terminal",
   "localhost",
-  "claudeCode",
 ];
 
 /**
  * Default layout — three-column design matching the intended workspace:
  *
- *   ┌─────────────┬──────────────────┬─────────────┐
- *   │  Explorer   │                  │  Terminal   │
- *   │  (3 × 6)    │   Code View      │  (4 × 5)    │
- *   ├─────────────┤   (5 × 10)       ├─────────────┤
- *   │  Localhost  │                  │ Claude Code │
- *   │  (3 × 4)    │                  │  (4 × 5)    │
- *   └─────────────┴──────────────────┴─────────────┘
- *     cols 0–2        cols 3–7          cols 8–11
+ *   ┌────────────────────────────────┬─────────────┐
+ *   │                                │  Terminal   │
+ *   │  Editor + Explorer (8 × 10)   │  (4 × 6)   │
+ *   │                                ├─────────────┤
+ *   │                                │  Localhost  │
+ *   │                                │  (4 × 4)   │
+ *   └────────────────────────────────┴─────────────┘
+ *              cols 0–7                 cols 8–11
  */
 export function createDefaultWorkspaceLayout(): WorkspaceLayout {
   return {
@@ -176,14 +173,9 @@ export function createDefaultWorkspaceLayout(): WorkspaceLayout {
       title: PANEL_META[kind].label,
     })),
     grid: [
-      // Left column — explorer fills top 60 %, localhost the bottom 40 %
-      { i: PANEL_IDS.fileExplorer, x: 0, y: 0, w: 3, h: 6, minW: 2, minH: 2 },
-      { i: PANEL_IDS.localhost,    x: 0, y: 6, w: 3, h: 4, minW: 2, minH: 2 },
-      // Centre column — code view spans full height
-      { i: PANEL_IDS.codeView,     x: 3, y: 0, w: 5, h: 10, minW: 3, minH: 2 },
-      // Right column — terminal top half, Claude Code bottom half
-      { i: PANEL_IDS.terminal,     x: 8, y: 0, w: 4, h: 5, minW: 3, minH: 2 },
-      { i: PANEL_IDS.claudeCode,   x: 8, y: 5, w: 4, h: 5, minW: 3, minH: 2 },
+      { i: PANEL_IDS.codeView, x: 0, y: 0, w: 8, h: 10, minW: 5, minH: 3 },
+      { i: PANEL_IDS.terminal, x: 8, y: 0, w: 4, h: 6, minW: 3, minH: 2 },
+      { i: PANEL_IDS.localhost, x: 8, y: 6, w: 4, h: 4, minW: 2, minH: 2 },
     ],
   };
 }
@@ -195,13 +187,13 @@ export function createDefaultWorkspaceLayout(): WorkspaceLayout {
  */
 export const PANEL_COLUMN: Record<PanelKind, { x: number; w: number }> = {
   fileExplorer: { x: 0, w: 3 },
-  localhost:    { x: 0, w: 3 },
-  codeView:     { x: 3, w: 5 },
-  livePreview:  { x: 3, w: 5 },
-  gitDiff:      { x: 3, w: 5 },
+  localhost:    { x: 8, w: 4 },
+  codeView:     { x: 0, w: 8 },
+  livePreview:  { x: 0, w: 8 },
+  gitDiff:      { x: 0, w: 8 },
   terminal:     { x: 8, w: 4 },
   claudeCode:   { x: 8, w: 4 },
-  tasks:        { x: 0, w: 3 },
+  tasks:        { x: 8, w: 4 },
 };
 
 /**

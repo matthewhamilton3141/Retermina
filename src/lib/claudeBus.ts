@@ -19,6 +19,8 @@ export interface ClaudeTarget {
   focus: () => void;
   /** Submit whatever is in Claude's prompt (press Enter). */
   submit: () => void;
+  /** Optional agent-aware paste + submit path (tracks drafts/run state). */
+  execute?: (text: string) => void;
 }
 
 const targets = new Map<string, ClaudeTarget>();
@@ -61,6 +63,10 @@ export const claudeBus = {
   run(workspaceId: string, text: string): boolean {
     const target = targets.get(workspaceId);
     if (!target) return false;
+    if (target.execute) {
+      target.execute(text);
+      return true;
+    }
     target.paste(text);
     target.focus();
     window.setTimeout(() => targets.get(workspaceId)?.submit(), 120);

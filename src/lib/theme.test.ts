@@ -35,9 +35,9 @@ describe("isLightTheme / claudeThemeForEngine", () => {
     expect(isLightTheme(THEME_BY_ID.sleek)).toBe(false);
   });
 
-  it("picks the matching Claude ANSI variant for each engine", () => {
-    expect(claudeThemeForEngine(THEME_BY_ID.pastel)).toBe("light-ansi");
-    expect(claudeThemeForEngine(THEME_BY_ID.sleek)).toBe("dark-ansi");
+  it("picks the matching full-colour Claude variant for each engine", () => {
+    expect(claudeThemeForEngine(THEME_BY_ID.pastel)).toBe("light");
+    expect(claudeThemeForEngine(THEME_BY_ID.sleek)).toBe("dark");
   });
 });
 

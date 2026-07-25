@@ -39,6 +39,15 @@ export interface ScheduledPrompt {
   delivered?: boolean;
 }
 
+export interface ScheduleDraft {
+  prompt: string;
+  /** Null when Claude reported a limit but no reset time could be parsed. */
+  fireAt: number | null;
+  workspaceId: string;
+  cwd: string | null;
+  workspaceLabel: string;
+}
+
 interface ScheduleInput {
   prompt: string;
   fireAt: number;
@@ -104,6 +113,19 @@ export const useScheduledPrompts = create<ScheduledPromptsState>()(
   ),
 );
 
+interface ScheduleDraftState {
+  draft: ScheduleDraft | null;
+  openDraft: (draft: ScheduleDraft) => void;
+  clearDraft: () => void;
+}
+
+/** Transient hand-off used to open ScheduleMenu from a workspace panel. */
+export const useScheduleDraft = create<ScheduleDraftState>((set) => ({
+  draft: null,
+  openDraft: (draft) => set({ draft }),
+  clearDraft: () => set({ draft: null }),
+}));
+
 /** (today | tomorrow) + "HH:MM" → absolute epoch ms. */
 export function computeFireAt(day: "today" | "tomorrow", timeHHMM: string): number {
   const [h, m] = timeHHMM.split(":").map((n) => parseInt(n, 10));
@@ -111,4 +133,25 @@ export function computeFireAt(day: "today" | "tomorrow", timeHHMM: string): numb
   d.setHours(h || 0, m || 0, 0, 0);
   if (day === "tomorrow") d.setDate(d.getDate() + 1);
   return d.getTime();
+}
+
+/** Epoch milliseconds → local `<input type="datetime-local">` value. */
+export function toLocalDateTimeInput(timestamp: number): string {
+  const date = new Date(timestamp);
+  const part = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}`;
+}
+
+/** Local `<input type="datetime-local">` value → epoch milliseconds. */
+export function fromLocalDateTimeInput(value: string): number {
+  if (!value) return Number.NaN;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+export function defaultScheduleAt(now = Date.now()): number {
+  const date = new Date(now);
+  date.setDate(date.getDate() + 1);
+  date.setSeconds(0, 0);
+  return date.getTime();
 }

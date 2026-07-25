@@ -237,12 +237,10 @@ export function isLightTheme(theme: ThemeMeta): boolean {
 }
 
 /**
- * Claude Code UI theme that best matches an engine. We use the `*-ansi` variants
- * so Claude paints with the terminal's own 16-colour palette (this engine's
- * `terminal` table) instead of its stock colours — making the embedded Claude
- * Code panel inherit the active engine's personality. Light/dark tracks the
- * engine's surface so text stays legible.
+ * Claude Code UI theme that best matches an engine. Keep Claude's stock
+ * full-colour theme rather than the reduced ANSI variant; xterm still supplies
+ * the matching light/dark canvas and terminal palette around it.
  */
-export function claudeThemeForEngine(theme: ThemeMeta): "light-ansi" | "dark-ansi" {
-  return isLightTheme(theme) ? "light-ansi" : "dark-ansi";
+export function claudeThemeForEngine(theme: ThemeMeta): "light" | "dark" {
+  return isLightTheme(theme) ? "light" : "dark";
 }

@@ -12,7 +12,6 @@ import Icon from "./Icon";
 import { listFiles } from "../lib/fs";
 import { useEditorStore } from "../store/editor";
 import { useWorkspaceStore } from "../store/workspace";
-import { PANEL_IDS } from "../lib/workspaceLayout";
 
 const MAX_RESULTS = 50;
 
@@ -50,8 +49,7 @@ export function FileSearch({ open, onClose, cwd }: FileSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const openFile    = useEditorStore((s) => s.openFile);
-  const panels      = useWorkspaceStore((s) => s.panels);
-  const togglePanel = useWorkspaceStore((s) => s.togglePanel);
+  const openPanel   = useWorkspaceStore((s) => s.openPanel);
 
   // Load (and cache) the file index whenever the palette opens.
   useEffect(() => {
@@ -84,8 +82,7 @@ export function FileSearch({ open, onClose, cwd }: FileSearchProps) {
   const choose = (rel: string) => {
     if (!cwd) return;
     const abs = `${cwd.replace(/\/$/, "")}/${rel}`;
-    // Reveal the Code panel if it's currently hidden.
-    if (!panels.some((p) => p.id === PANEL_IDS.codeView)) togglePanel("codeView");
+    openPanel("codeView");
     void openFile(abs);
     onClose();
   };

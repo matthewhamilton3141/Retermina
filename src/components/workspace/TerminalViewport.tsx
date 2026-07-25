@@ -45,7 +45,11 @@ export interface TerminalViewportProps {
    * still connecting (that queue is flushed first), so it behaves like the
    * first thing typed into a fresh shell rather than racing ahead of it.
    */
-  initialCommand?: string;
+  initialCommand?: string | (() => string);
+  /** Keep a mounted background terminal from stealing focus on connect. */
+  autoFocus?: boolean;
+  /** Decoded PTY output, for consumers that need non-visual status signals. */
+  onOutput?: (text: string) => void;
   /**
    * Whether this viewport registers itself as the terminal Iris drives.
    * Defaults to true, matching the original (sole) Terminal panel's behavior.
@@ -130,6 +134,8 @@ export function TerminalViewport({
   className,
   onExit,
   initialCommand,
+  autoFocus = true,
+  onOutput,
   registerWithBus = true,
   active = true,
   onInput,
@@ -145,6 +151,10 @@ export function TerminalViewport({
   // Same pattern for broadcast hooks — the PTY effect runs once per cwd.
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+  const onOutputRef = useRef(onOutput);
+  onOutputRef.current = onOutput;
+  const autoFocusRef = useRef(autoFocus);
+  autoFocusRef.current = autoFocus;
   const registerWriteRef = useRef(registerWrite);
   registerWriteRef.current = registerWrite;
   const registerControlsRef = useRef(registerControls);
@@ -238,6 +248,41 @@ export function TerminalViewport({
     let disposed = false;
     let sessionId: string | null = null;
     const pendingInput: string[] = [];
+    const outputDecoder = new TextDecoder();
+
+    // Auto-run command bootstrap. The command must NOT be blasted into the PTY
+    // the instant the session id returns: the interactive login shell hasn't
+    // initialised its line editor yet, so a raw keystroke burst races ZLE
+    // startup and gets mangled (dropped chars, a stray mid-command CR that
+    // splits the line) — which is exactly how `claude …` ends up as a broken
+    // command that never launches. Instead we wait for the shell to advertise
+    // bracketed-paste mode (`ESC [ ? 2004 h`), its reliable "ready to read a
+    // line" signal, then paste the command as one literal unit so ZLE widgets
+    // (autosuggest, syntax highlight) can't corrupt it. A fallback timer covers
+    // shells that never advertise bracketed paste (plain send, best effort).
+    let initialCommandSent = false;
+    let shellReady = false;
+    let readinessScan = "";
+    let initialFallbackTimer: number | undefined;
+
+    const sendInitialCommand = (bracketed: boolean) => {
+      if (initialCommandSent || sessionId === null) return;
+      initialCommandSent = true;
+      if (initialFallbackTimer !== undefined) {
+        window.clearTimeout(initialFallbackTimer);
+        initialFallbackTimer = undefined;
+      }
+      const id = sessionId;
+      const initial = initialCommandRef.current;
+      const command = typeof initial === "function" ? initial() : initial;
+      if (!command) return;
+      if (bracketed) {
+        void writeToPty(id, `\x1b[200~${command}\x1b[201~`);
+        window.setTimeout(() => void writeToPty(id, "\r"), 90);
+      } else {
+        void writeToPty(id, `${command}\r`);
+      }
+    };
 
     const term = new Terminal({
       fontFamily: fontFamilyRef.current,
@@ -339,8 +384,22 @@ export function TerminalViewport({
     const handleEvent = (event: PtyEvent) => {
       if (disposed) return;
       if (event.type === "data") {
-        term.write(base64ToBytes(event.chunk));
+        const bytes = base64ToBytes(event.chunk);
+        term.write(bytes);
+        const decoded = outputDecoder.decode(bytes, { stream: true });
+        if (decoded) onOutputRef.current?.(decoded);
+        // Watch for the shell's bracketed-paste enable — the moment its line
+        // editor is ready to take the auto-run command cleanly.
+        if (!shellReady && !initialCommandSent && decoded) {
+          readinessScan = (readinessScan + decoded).slice(-64);
+          if (readinessScan.includes("\x1b[?2004h")) {
+            shellReady = true;
+            sendInitialCommand(true);
+          }
+        }
       } else {
+        const finalText = outputDecoder.decode();
+        if (finalText) onOutputRef.current?.(finalText);
         term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n");
         onExitRef.current?.();
       }
@@ -365,12 +424,21 @@ export function TerminalViewport({
         sessionId = id;
         for (const input of pendingInput) void writeToPty(id, input);
         pendingInput.length = 0;
-        term.focus();
-        // Fire once per session, after any buffered keystrokes — same shape as
-        // Iris's own terminalBus.run, just sent directly since this viewport
-        // owns the session itself rather than going through the bus.
-        const command = initialCommandRef.current;
-        if (command) void writeToPty(id, `${command}\r`);
+        if (autoFocusRef.current) term.focus();
+        // Fire the auto-run command once per session, but only once the shell's
+        // line editor is ready (see sendInitialCommand). If the readiness signal
+        // already arrived (fast shells can emit it before this promise resolves)
+        // send now; otherwise a fallback timer sends plainly for shells that
+        // never advertise bracketed paste.
+        if (shellReady) {
+          sendInitialCommand(true);
+        } else if (!initialCommandSent) {
+          // Long fallback: normal zsh/bash always advertise bracketed paste (so
+          // the instant path above fires and this never runs). Only a shell that
+          // never emits the signal waits this out — better a slightly late clean
+          // launch than a premature plain send that races a heavy shell startup.
+          initialFallbackTimer = window.setTimeout(() => sendInitialCommand(false), 4000);
+        }
         // Populate the drop-handler write ref for this specific PTY.
         ptyWriteRef.current = (data) => void writeToPty(id, data);
         // Hand the write fn to a parent (split panel broadcast) too.
@@ -426,6 +494,7 @@ export function TerminalViewport({
 
     return () => {
       disposed = true;
+      if (initialFallbackTimer !== undefined) window.clearTimeout(initialFallbackTimer);
       ptyWriteRef.current = null;
       registerBusRef.current = null;
       refitRef.current = null;
