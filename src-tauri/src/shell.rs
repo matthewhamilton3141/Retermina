@@ -1,13 +1,13 @@
-//! Backend for the Iris command bar.
+//! Shell-backed helpers exposed to the frontend.
 //!
 //! Two capabilities live here:
-//! - [`git_status`] inspects the workspace repo so Iris can offer *contextual*
-//!   Git macros (e.g. only suggest "Push" when the branch is ahead). It shells
-//!   out to `git status --porcelain=v2 --branch`, whose stable machine format is
-//!   parsed by the pure, unit-tested [`parse_git_status`].
+//! - [`git_status`] inspects the workspace repo (branch, ahead/behind, dirty
+//!   state) for the header git badge. It shells out to
+//!   `git status --porcelain=v2 --branch`, whose stable machine format is parsed
+//!   by the pure, unit-tested [`parse_git_status`].
 //! - [`run_background_command`] runs a one-shot command through the user's shell
-//!   and captures its output, powering Iris's background execution (used when no
-//!   live terminal is available to receive the command).
+//!   and captures its output (used by the Changes panel, repo clone, etc. — any
+//!   place that needs a captured result without a live terminal).
 //!
 //! Both run the command through a login shell so a GUI-launched app inherits the
 //! user's full `PATH` (where `git`, `node`, etc. actually live).

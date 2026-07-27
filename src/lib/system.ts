@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Typed wrappers around the Step 6 system commands (Localhost tracker + Iris
- * backend). Centralizing the `invoke` boundary keeps components free of
- * stringly-typed command names and mirrors the Rust payload shapes.
+ * Typed wrappers around the system commands (localhost tracker + shell-backed
+ * git status / background command). Centralizing the `invoke` boundary keeps
+ * components free of stringly-typed command names and mirrors the Rust payloads.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -45,10 +45,10 @@ export function killProcess(pid: number, force = false): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Iris backend                                                               */
+/* Shell-backed commands                                                      */
 /* -------------------------------------------------------------------------- */
 
-/** Mirrors the Rust `CommandResult` from `iris.rs`. */
+/** Mirrors the Rust `CommandResult` from `shell.rs`. */
 export interface CommandResult {
   /** Exit code, or null if the process was terminated by a signal. */
   code: number | null;
@@ -57,8 +57,8 @@ export interface CommandResult {
 }
 
 /**
- * Run a one-shot command in the background and capture its output. Used by Iris
- * when no live terminal is available to receive the command.
+ * Run a one-shot command in the background and capture its output — used where a
+ * captured result is needed without a live terminal (Changes panel, repo clone).
  */
 export function runBackgroundCommand(
   command: string,
@@ -67,7 +67,7 @@ export function runBackgroundCommand(
   return invoke<CommandResult>("run_background_command", { command, cwd });
 }
 
-/** Mirrors the Rust `GitStatus` from `iris.rs`. */
+/** Mirrors the Rust `GitStatus` from `shell.rs`. */
 export interface GitStatus {
   isRepo: boolean;
   branch: string | null;
@@ -98,8 +98,9 @@ export const DEFAULT_GIT_STATUS: GitStatus = {
 };
 
 /**
- * Inspect the Git repository rooted at `cwd` for Iris's contextual macros.
- * Resolves to {@link DEFAULT_GIT_STATUS} on failure so callers never throw.
+ * Inspect the Git repository rooted at `cwd` (branch, ahead/behind, dirty state)
+ * for the workspace header git badge. Resolves to {@link DEFAULT_GIT_STATUS} on
+ * failure so callers never throw.
  */
 export async function gitStatus(cwd?: string | null): Promise<GitStatus> {
   try {

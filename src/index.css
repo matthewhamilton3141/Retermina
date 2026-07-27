@@ -197,13 +197,6 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
-[data-theme="glass"] .rt-irisbar {
-  background-color: #ffffff;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
-}
-
 /* Minimalist — flat, shadowless, hairline borders, near-monochrome on white. */
 [data-theme="minimalist"] {
   color-scheme: light;
@@ -986,15 +979,7 @@ body {
   background-color: var(--rt-surface-hover);
 }
 
-/* Iris command bar: a bottom dock that mirrors the top toolbar's surface. */
-.rt-irisbar {
-  background-color: var(--rt-surface-strong);
-  border-top: var(--rt-border-width) solid var(--rt-border);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-/* Text input (Iris query field). */
+/* Text input field. */
 .rt-input {
   color: var(--rt-text);
   background-color: var(--rt-subsurface);
