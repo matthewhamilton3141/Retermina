@@ -1,3 +1,4 @@
+mod claude_activity;
 mod claude_agent;
 mod claude_stats;
 mod fonts;
@@ -46,6 +47,7 @@ pub fn run() {
             claude_agent::stop_claude_agent,
             claude_stats::get_claude_token_usage,
             claude_stats::set_claude_theme,
+            claude_activity::get_claude_activity,
             fonts::save_font,
             fonts::read_font,
             fonts::list_fonts,

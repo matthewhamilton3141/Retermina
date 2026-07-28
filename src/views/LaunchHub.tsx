@@ -6,6 +6,7 @@ import LaunchActionCard, {
   type LaunchAction,
 } from "../components/launch/LaunchActionCard";
 import RecentWorkspacesPanel from "../components/launch/RecentWorkspacesPanel";
+import ActivityHeatmap from "../components/launch/ActivityHeatmap";
 import { useAppStore } from "../store/app";
 import { useRecentStore } from "../store/recent";
 import { useEditorStore } from "../store/editor";
@@ -545,6 +546,8 @@ export function LaunchHub() {
               </div>
             )}
           </section>
+
+          <ActivityHeatmap />
 
           <RecentWorkspacesPanel onOpen={openWorkspace} />
         </div>
