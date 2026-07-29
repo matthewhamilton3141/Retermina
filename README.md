@@ -30,7 +30,7 @@ Retermina is a native desktop application built with [Tauri v2](https://v2.tauri
 - **Font storage** (`fonts.rs`) — `save_font` / `read_font` / `list_fonts` / `delete_font` copy uploaded `.ttf`/`.otf` files into `<data_dir>/Retermina/fonts` (path-traversal-safe, extension-validated) and stream their bytes back as base64 for `FontFace` registration.
 - **Claude integration** (`claude_stats.rs`) — `get_claude_token_usage` parses the local Claude CLI JSONL logs for the open project to compute per-project token totals and an estimated cost. `set_claude_theme` keeps Claude Code's own UI theme in step with the active engine by surgically updating the `theme` key in `~/.claude.json` (read-modify-write of that one key, atomic temp-file rename, and it never creates the file).
 - **Loom presets** (`presets.rs`) — `read_presets` / `write_presets` persist the preset library to `<data_dir>/Retermina/presets.json`, serving as the Tauri-file storage backend for the Loom store.
-- **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata (branch, short HEAD commit from the `# branch.oid` line, ahead/behind counts, staged/unstaged file counts) to the Iris command bar.
+- **Git context** — shells out to `git status --porcelain=v2` to supply live repo metadata (branch, short HEAD commit from the `# branch.oid` line, ahead/behind counts, staged/unstaged file counts) to the header git badge.
 - **Port discovery** — `lsof` / `netstat` parsing to surface active local servers in the Localhost Tracker panel.
 
 IPC uses Tauri's typed `invoke` for request/response and `Channel<T>` for streaming PTY output. The `updater` + `process` plugins back the Settings → Version self-update flow, and the `dialog` plugin powers Loom export/import file pickers. All window actions (drag, close, destroy, minimize, maximize, animated resize) and plugin permissions are explicitly granted via `capabilities/default.json` — nothing is implicitly allowed. (`allow-destroy` is what lets the Preview pop-out actually tear itself down on close.)
@@ -107,84 +107,6 @@ Where quick-open matches file *names*, content search matches file *contents*. T
 #### Floating menus
 
 Right-click menus and popovers render through a portal into `document.body` (`FloatingMenu`). Because react-grid-layout applies a `transform` to each panel, a normal `position: fixed` menu would be trapped and clipped by the panel's `overflow: hidden`; the portal lifts menus onto the top layer above every panel and clamps them to stay fully on-screen.
-
-### Iris command bar
-
-Iris is a **local, tokenless** command bar at the bottom of the workspace. It requires no API keys, no network connection, and no LLM inference.
-
-The bar doubles as a **git status strip**: inside a repo it shows the current branch, the short **HEAD commit** (`@abc1234`), ahead/behind counts, and an uncommitted-changes dot — all parsed from the single `git status --porcelain=v2` call that also gates the macros, so the commit display costs no extra git invocation.
-
-**Custom macros.** Beyond the built-in catalog below, you can add your **own** macros — a name, match keywords, and a command line — from the manager on the Iris bar. They're persisted locally and merged into the suggestion ranking (always available, run as typed), so your repeated workflows become one fuzzy match away.
-
-**How it works:**
-- A static macro catalog is filtered at query time against `IrisCtx` — a context object that merges live Git state (branch, ahead/behind counts, staged/unstaged file counts) with the currently open file path.
-- **Fuzzy matching** scores each macro's title and keywords: prefix match → 100 pts, substring → 60 pts, subsequence → 25 pts. Macros scoring 0 are excluded.
-- **Contextual gating** — every macro declares `available(ctx): boolean`. "Push" only surfaces when commits are ahead of upstream. "Diff staged" only appears when staged changes exist. File commands only appear when a file is open in the Code panel.
-- A **"Run as typed"** fallback always appears for non-empty queries so any raw shell command is one Enter away.
-- **Navigation:** `↑ ↓` to move through suggestions, `Enter` or `Tab` to run, `Esc` to dismiss.
-
-#### Git commands
-
-| Keywords | Command | When available |
-|---|---|---|
-| `sync`, `rebase`, `update` | `git pull --rebase && git push` | repo, has upstream, ahead or behind |
-| `push`, `upload`, `publish` | `git push` | repo, has upstream, commits ahead |
-| `publish`, `set upstream` | `git push -u origin <branch>` | repo, no upstream set |
-| `pull`, `download`, `merge` | `git pull` | repo, has upstream, commits behind |
-| `fetch`, `prune` | `git fetch --all --prune` | in any repo |
-| `commit`, `commit all`, `ci` | `git add -A && git commit` | repo, uncommitted changes |
-| `commit staged`, `ci` | `git commit` | repo, staged changes exist |
-| `stage`, `add`, `git add` | `git add -A` | repo, unstaged or untracked files |
-| `checkout`, `switch`, `change branch` | `git checkout <branch>` *(prompts for name)* | in any repo |
-| `new branch`, `create branch`, `feature branch` | `git checkout -b <branch>` *(prompts for name)* | in any repo |
-| `merge`, `combine branch` | `git merge <branch>` *(prompts for name)* | in any repo |
-| `tag`, `create tag`, `release` | `git tag <name>` *(prompts for name)* | in any repo |
-| `status`, `st`, `what changed` | `git status` | in any repo |
-| `diff`, `changes`, `delta` | `git diff` | repo, unstaged changes |
-| `diff staged`, `cached` | `git diff --staged` | repo, staged changes exist |
-| `log`, `history`, `graph` | `git log --oneline --graph --decorate -20` | in any repo |
-| `stash`, `shelve` | `git stash push -u` | repo, uncommitted changes |
-| `stash pop`, `unstash`, `pop` | `git stash pop` | in any repo |
-| `stash list`, `stashes` | `git stash list` | in any repo |
-| `branch`, `branches` | `git branch -a` | in any repo |
-| `remote`, `remotes`, `origin` | `git remote -v` | in any repo |
-| `init`, `new repo` | `git init` | **not** in a repo |
-| `discard`, `restore` *(hidden)* | `git restore .` | repo, unstaged changes |
-| `undo`, `undo commit` *(hidden)* | `git reset --soft HEAD~1` | in any repo |
-| `amend`, `fix commit` *(hidden)* | `git commit --amend --no-edit` | in any repo |
-
-> Hidden commands only appear when explicitly typed — they never show in the default empty-query list.
-
-#### npm commands
-
-| Keywords | Command |
-|---|---|
-| `install`, `npm i`, `dependencies` | `npm install` |
-| `dev`, `start`, `serve`, `vite` | `npm run dev` |
-| `build`, `bundle`, `compile` | `npm run build` |
-| `test`, `jest`, `vitest`, `spec` | `npm test` |
-| `lint`, `eslint`, `check` | `npm run lint` |
-| `run`, `npm run`, `script` | `npm run <script>` *(prompts for script name)* |
-
-#### Shell commands
-
-| Keywords | Command |
-|---|---|
-| `ls`, `list`, `dir`, `files` | `ls -la` |
-| `clear`, `cls` | `clear` |
-| `pwd`, `where`, `cwd` | `pwd` |
-| `du`, `disk`, `size`, `folder size` | `du -sh ./* \| sort -h` |
-| `find`, `typescript`, `javascript`, `source` | `find` for all TS/JS/TSX/JSX, excluding `node_modules` and `dist` |
-| `ps`, `processes`, `node`, `running` | `ps aux` filtered for node/npm/vite/pnpm |
-| `mkdir`, `make dir`, `new folder` | `mkdir -p <name>` *(prompts for directory name)* |
-
-#### File commands *(require a file open in the Code panel)*
-
-| Keywords | Command |
-|---|---|
-| `finder`, `reveal`, `locate` | `open -R "<path>"` — opens Finder with file selected |
-| `open`, `open file`, `default app` | `open "<path>"` — opens with default macOS application |
-| `copy path`, `clipboard`, `path` | `echo -n "<path>" \| pbcopy` — copies path to clipboard |
 
 ### Semantic theming engine
 
@@ -327,7 +249,7 @@ npm run tauri build  # production bundle
 npm test             # run the unit suite (Vitest)
 ```
 
-The pure logic modules under `src/lib` (the LCS diff, the Iris suggestion ranker, the Loom schema validator, the theme/contrast helpers, and the grid layout reconciler) are covered by a [Vitest](https://vitest.dev) suite — `npm test` runs it once, `npm run test:watch` re-runs on change.
+The pure logic modules under `src/lib` (the LCS diff, the Loom schema validator, the theme/contrast helpers, and the grid layout reconciler) are covered by a [Vitest](https://vitest.dev) suite — `npm test` runs it once, `npm run test:watch` re-runs on change.
 
 The production build splits heavy vendor libraries (xterm.js, react-grid-layout, Prism) into their own Rollup chunks via `manualChunks` in `vite.config.ts`, so the Launch Hub no longer ships the terminal/grid/highlighter code up front.
 

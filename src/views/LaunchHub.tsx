@@ -120,19 +120,6 @@ export function LaunchHub() {
     }
   }, []);
 
-  useEffect(() => {
-    const onFocus = () => {
-      if (importState.status !== "idle") return;
-      getTerminalCwd()
-        .then((result) =>
-          setImportState({ status: "found", cwd: result.cwd, app: result.app }),
-        )
-        .catch(() => {});
-    };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [importState.status]);
-
   const confirmImport = useCallback(() => {
     if (importState.status !== "found") return;
     openTerminal(importState.cwd);
