@@ -269,6 +269,14 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     const id = sessionId;
     let disposed = false;
     let handleId: string | null = null;
+    // When `id` was seeded from the persisted resume pointer we skipped the mint
+    // branch above, so the live-session store has no entry for this workspace
+    // yet — and `ingest()` drops every record until one exists, leaving the
+    // Agent view blank. Establish it here (guarded so we never wipe an existing
+    // transcript when a matching session is already live).
+    if (useClaudeSessions.getState().sessions[workspaceId]?.sessionId !== id) {
+      beginSession(workspaceId, id);
+    }
     if (useClaudeSessions.getState().sessions[workspaceId]?.status !== "running") {
       setStatus(workspaceId, "connecting");
     }
