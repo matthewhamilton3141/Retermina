@@ -16,13 +16,33 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::ipc::Channel;
+
+/// Bridges the headless Agent process's `AskUserQuestion`-equivalent to this
+/// app's own UI. The built-in `AskUserQuestion` tool auto-resolves with empty
+/// answers whenever Claude Code detects no interactive terminal — that's
+/// hardcoded, not a permission setting, so it can never work in `-p`
+/// stream-json mode. Instead each Agent process gets its own single-tool MCP
+/// server: a tiny Node relay (this script) piping stdio to a TCP socket this
+/// Rust process listens on, where the real JSON-RPC handling happens. MCP
+/// tool calls go through the normal tool_use/tool_result flow (confirmed
+/// empirically), so this sidesteps the no-TTY auto-deny entirely.
+const MCP_ASK_BRIDGE_JS: &str = include_str!("mcp_ask_bridge.js");
+const MCP_ASK_TOOL_NAME: &str = "ask_user_question";
+const MCP_ASK_SERVER_NAME: &str = "retermina";
+
+fn write_bridge_script() -> std::io::Result<std::path::PathBuf> {
+    let path = std::env::temp_dir().join("retermina-mcp-ask-bridge.js");
+    std::fs::write(&path, MCP_ASK_BRIDGE_JS)?;
+    Ok(path)
+}
 
 #[derive(Default)]
 pub struct ClaudeAgentManager {
@@ -34,6 +54,13 @@ struct AgentHandle {
     child: Child,
     stdin: Option<ChildStdin>,
     interrupt_seq: u64,
+    /// Sender for whichever `ask_user_question` MCP call is currently
+    /// blocked waiting on an answer (at most one at a time — the agent
+    /// process can't continue past a pending question to ask another).
+    mcp_answer_tx: Arc<Mutex<Option<mpsc::Sender<String>>>>,
+    /// The bridge's TCP connection, kept only so `stop_claude_agent` can
+    /// shut it down and unblock the listener thread on teardown.
+    mcp_stream: Arc<Mutex<Option<TcpStream>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -99,6 +126,20 @@ pub fn start_claude_agent(
         return Err("invalid Claude session id".into());
     }
 
+    let mcp_listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+    let mcp_port = mcp_listener.local_addr().map_err(|e| e.to_string())?.port();
+    let bridge_path = write_bridge_script().map_err(|e| e.to_string())?;
+    let mcp_config = json!({
+        "mcpServers": {
+            MCP_ASK_SERVER_NAME: {
+                "command": "node",
+                "args": [bridge_path.to_string_lossy(), "--", mcp_port.to_string()]
+            }
+        }
+    })
+    .to_string();
+    let mcp_tool_name = format!("mcp__{MCP_ASK_SERVER_NAME}__{MCP_ASK_TOOL_NAME}");
+
     // `exec` replaces the login shell with Claude so the spawned child PID *is*
     // Claude — killing it (on stop/restart) actually terminates Claude and frees
     // the session id immediately, instead of orphaning it under a dead shell
@@ -119,6 +160,19 @@ pub fn start_claude_agent(
     if let Some(model) = model.filter(|m| m != "default" && !m.is_empty()) {
         claude.push_str(&format!(" --model {}", shell_quote(&model)));
     }
+    // The built-in AskUserQuestion can't work headless (see module doc comment
+    // above), so hide it and give Claude an MCP-backed replacement instead.
+    claude.push_str(" --disallowedTools AskUserQuestion");
+    claude.push_str(&format!(" --allowedTools {}", shell_quote(&mcp_tool_name)));
+    claude.push_str(&format!(" --mcp-config {}", shell_quote(&mcp_config)));
+    claude.push_str(" --strict-mcp-config");
+    claude.push_str(&format!(
+        " --append-system-prompt {}",
+        shell_quote(&format!(
+            "When you need to ask the user a clarifying question, use the {mcp_tool_name} tool \
+             (the built-in AskUserQuestion tool is unavailable in this session)."
+        ))
+    ));
 
     // Run through a login shell so a GUI-launched app inherits the user's full
     // PATH (where `claude`/`node` actually live).
@@ -179,6 +233,118 @@ pub fn start_claude_agent(
         }
     });
 
+    let mcp_answer_tx = Arc::new(Mutex::new(None));
+    let mcp_stream = Arc::new(Mutex::new(None));
+
+    // The MCP bridge: accept the Node relay's one connection, then handle its
+    // JSON-RPC requests directly (this *is* the MCP server, just over TCP
+    // instead of stdio, since the relay is what actually gets spawned by
+    // Claude Code). `tools/call` blocks on `mcp_answer_tx` until the frontend
+    // delivers an answer via the `answer_mcp_question` command.
+    let mcp_answer_tx_for_thread = mcp_answer_tx.clone();
+    let mcp_stream_for_thread = mcp_stream.clone();
+    std::thread::spawn(move || {
+        let Ok((stream, _)) = mcp_listener.accept() else {
+            return;
+        };
+        let Ok(mut writer) = stream.try_clone() else {
+            return;
+        };
+        if let Ok(stream_for_slot) = stream.try_clone() {
+            *mcp_stream_for_thread.lock().unwrap() = Some(stream_for_slot);
+        }
+        let reader = BufReader::new(stream);
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(req) = serde_json::from_str::<Value>(trimmed) else {
+                continue;
+            };
+            let method = req.get("method").and_then(Value::as_str).unwrap_or("");
+            let id = req.get("id").cloned().unwrap_or(Value::Null);
+            let response = match method {
+                "initialize" => Some(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": { "tools": {} },
+                        "serverInfo": { "name": MCP_ASK_SERVER_NAME, "version": "0.1.0" }
+                    }
+                })),
+                "notifications/initialized" => None,
+                "tools/list" => Some(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "tools": [{
+                            "name": MCP_ASK_TOOL_NAME,
+                            "description": "Ask the user one or more clarifying questions with multiple-choice options and get their answers back.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "questions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "question": { "type": "string" },
+                                                "header": { "type": "string" },
+                                                "multiSelect": { "type": "boolean" },
+                                                "options": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "label": { "type": "string" },
+                                                            "description": { "type": "string" }
+                                                        },
+                                                        "required": ["label"]
+                                                    }
+                                                }
+                                            },
+                                            "required": ["question", "options"]
+                                        }
+                                    }
+                                },
+                                "required": ["questions"]
+                            }
+                        }]
+                    }
+                })),
+                "tools/call" => {
+                    let (tx, rx) = mpsc::channel::<String>();
+                    *mcp_answer_tx_for_thread.lock().unwrap() = Some(tx);
+                    let answer = rx.recv().unwrap_or_default();
+                    Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": { "content": [{ "type": "text", "text": answer }] }
+                    }))
+                }
+                _ => {
+                    if id.is_null() {
+                        None
+                    } else {
+                        Some(json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": { "code": -32601, "message": "method not found" }
+                        }))
+                    }
+                }
+            };
+            if let Some(response) = response {
+                if writeln!(writer, "{response}").is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
     manager
         .agents
         .lock()
@@ -189,6 +355,8 @@ pub fn start_claude_agent(
                 child,
                 stdin,
                 interrupt_seq: 0,
+                mcp_answer_tx,
+                mcp_stream,
             })),
         );
 
@@ -228,6 +396,30 @@ pub fn send_claude_agent(
         .map_err(|e| e.to_string())?;
     stdin.flush().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Answer the pending `ask_user_question` MCP tool call (see the module doc
+/// comment). Delivers the answer to the listener thread blocked on
+/// `mcp_answer_tx`, which writes it as that call's JSON-RPC result — this is
+/// how the answer actually reaches Claude, not a synthetic `tool_result`
+/// written to the agent's stdin.
+#[tauri::command]
+pub fn answer_mcp_question(
+    manager: tauri::State<'_, ClaudeAgentManager>,
+    handle_id: String,
+    content: String,
+) -> Result<(), String> {
+    let handle = agent_handle(&manager, &handle_id)?;
+    let handle = handle.lock().map_err(|_| "Claude agent lock poisoned")?;
+    let tx = handle
+        .mcp_answer_tx
+        .lock()
+        .map_err(|_| "Claude agent lock poisoned")?
+        .take();
+    match tx {
+        Some(tx) => tx.send(content).map_err(|e| e.to_string()),
+        None => Err("no pending question for this agent".into()),
+    }
 }
 
 /// Cancel the in-flight turn via the stream-json control protocol.
@@ -272,6 +464,14 @@ pub fn stop_claude_agent(
             handle.stdin.take();
             let _ = handle.child.kill();
             let _ = handle.child.wait();
+            // Unblock the MCP listener thread (if it's mid-`tools/call`) and let
+            // the Node bridge see its socket close and exit, rather than leaking
+            // both as orphans.
+            if let Ok(mut stream) = handle.mcp_stream.lock() {
+                if let Some(stream) = stream.take() {
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                }
+            }
         }
     }
     Ok(())

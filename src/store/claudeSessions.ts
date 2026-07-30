@@ -6,6 +6,7 @@ import {
   emptyClaudeTranscript,
   type ClaudePermissionMode,
   type ClaudeRunStatus,
+  type ClaudeShellActivity,
   type ClaudeTimelineItem,
   type ClaudeTranscriptSnapshot,
 } from "../lib/claudeTranscript";
@@ -25,13 +26,19 @@ export interface ClaudeLiveSession extends ClaudeTranscriptSnapshot {
 interface ClaudeSessionsState {
   sessions: Record<string, ClaudeLiveSession>;
   beginSession: (workspaceId: string, sessionId: string) => void;
-  ingest: (workspaceId: string, sessionId: string, index: number, record: unknown) => void;
+  ingest: (workspaceId: string, sessionId: string, sourceId: string, record: unknown) => void;
   setStatus: (workspaceId: string, status: ClaudeRunStatus) => void;
   setPermissionMode: (workspaceId: string, permissionMode: ClaudePermissionMode) => void;
   setError: (workspaceId: string, error: string) => void;
   markSubmitted: (workspaceId: string, prompt: string) => void;
   markInterrupted: (workspaceId: string) => void;
   pushNotice: (workspaceId: string, text: string) => void;
+  addShellItem: (workspaceId: string, item: ClaudeShellActivity) => void;
+  updateShellItem: (
+    workspaceId: string,
+    id: string,
+    patch: Partial<Pick<ClaudeShellActivity, "status" | "code" | "stdout" | "stderr">>,
+  ) => void;
   setLimit: (workspaceId: string, limit: ClaudeLimitNotice | null) => void;
   removeSession: (workspaceId: string, sessionId: string) => void;
 }
@@ -52,11 +59,11 @@ export const useClaudeSessions = create<ClaudeSessionsState>((set) => ({
       },
     })),
 
-  ingest: (workspaceId, sessionId, index, record) =>
+  ingest: (workspaceId, sessionId, sourceId, record) =>
     set((state) => {
       const current = state.sessions[workspaceId];
       if (!current || current.sessionId !== sessionId) return state;
-      const transcript = applyClaudeRecord(current, record, `${sessionId}:${index}`);
+      const transcript = applyClaudeRecord(current, record, sourceId);
       return {
         sessions: {
           ...state.sessions,
@@ -169,6 +176,30 @@ export const useClaudeSessions = create<ClaudeSessionsState>((set) => ({
           ...state.sessions,
           [workspaceId]: { ...current, items: [...current.items, item] },
         },
+      };
+    }),
+
+  addShellItem: (workspaceId, item) =>
+    set((state) => {
+      const current = state.sessions[workspaceId];
+      if (!current) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [workspaceId]: { ...current, items: [...current.items, item] },
+        },
+      };
+    }),
+
+  updateShellItem: (workspaceId, id, patch) =>
+    set((state) => {
+      const current = state.sessions[workspaceId];
+      if (!current) return state;
+      const items = current.items.map((item) =>
+        item.kind === "shell" && item.id === id ? { ...item, ...patch } : item,
+      );
+      return {
+        sessions: { ...state.sessions, [workspaceId]: { ...current, items } },
       };
     }),
 

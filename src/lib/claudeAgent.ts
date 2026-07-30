@@ -44,6 +44,30 @@ export function sendClaudeAgentMessage(handleId: string, text: string): Promise<
   return invoke<void>("send_claude_agent", { handleId, text });
 }
 
+/**
+ * Answer the pending `ask_user_question` MCP call (the headless agent's
+ * stand-in for the built-in `AskUserQuestion`, which can't work without a
+ * TTY — see `src-tauri/src/claude_agent.rs`).
+ */
+export function answerMcpQuestion(handleId: string, content: string): Promise<void> {
+  return invoke<void>("answer_mcp_question", { handleId, content });
+}
+
+/**
+ * Read every parsed stream-json record from a session's persisted transcript
+ * (`~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`). Used to backfill the
+ * Agent view's structured timeline with whatever happened while the CLI (a
+ * separate process resuming the same session) was active — the headless agent
+ * has no other way to observe that activity. Returns an empty array (not an
+ * error) when the session has no transcript yet.
+ */
+export function readClaudeSessionTranscript(
+  cwd: string | null,
+  sessionId: string,
+): Promise<unknown[]> {
+  return invoke<unknown[]>("read_claude_session_transcript", { cwd, sessionId });
+}
+
 /** Cancel the in-flight turn (stream-json interrupt control request). */
 export function interruptClaudeAgent(handleId: string): Promise<void> {
   return invoke<void>("interrupt_claude_agent", { handleId });

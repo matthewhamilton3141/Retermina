@@ -97,6 +97,9 @@ export interface TerminalControls {
   getSelection: () => string;
   /** The most recent command + its output, or the visible screen as fallback. */
   getLastOutput: () => string;
+  /** This viewport's live PTY session id, for a parent that needs to tear it
+   *  down explicitly (e.g. to free a Claude session id for another process). */
+  sessionId: string;
 }
 
 /**
@@ -450,6 +453,7 @@ export function TerminalViewport({
           focus: () => term.focus(),
           getSelection: () => term.getSelection(),
           getLastOutput,
+          sessionId: id,
         });
 
         if (registerWithBus) {

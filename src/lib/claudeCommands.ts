@@ -29,7 +29,7 @@ export const CORE_CLAUDE_SLASH_COMMANDS: readonly ClaudeSlashCommand[] = [
     usage: "/compact [focus instructions]",
     description: "Summarize older context and keep working.",
     group: "Session",
-    behavior: "cli",
+    behavior: "agent",
     acceptsArguments: true,
   },
   {
@@ -37,7 +37,7 @@ export const CORE_CLAUDE_SLASH_COMMANDS: readonly ClaudeSlashCommand[] = [
     usage: "/context [all]",
     description: "Inspect what is using the context window.",
     group: "Session",
-    behavior: "cli",
+    behavior: "agent",
     acceptsArguments: true,
   },
   {
@@ -45,7 +45,7 @@ export const CORE_CLAUDE_SLASH_COMMANDS: readonly ClaudeSlashCommand[] = [
     usage: "/usage",
     description: "View plan limits and token usage.",
     group: "Session",
-    behavior: "cli",
+    behavior: "agent",
   },
   {
     command: "/rewind",
@@ -142,7 +142,7 @@ export const CORE_CLAUDE_SLASH_COMMANDS: readonly ClaudeSlashCommand[] = [
     usage: "/config [key=value]",
     description: "Open or update Claude Code settings.",
     group: "Settings",
-    behavior: "cli",
+    behavior: "agent",
     acceptsArguments: true,
   },
   {

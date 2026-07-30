@@ -8,6 +8,7 @@ import {
   summarizeClaudeToolDiffs,
   type ClaudeQuestionActivity,
   type ClaudeRunStatus,
+  type ClaudeShellActivity,
   type ClaudeTimelineItem,
   type ClaudeToolActivity,
 } from "../../lib/claudeTranscript";
@@ -165,17 +166,68 @@ function ToolRow({ tool }: { tool: ClaudeToolActivity }) {
   );
 }
 
+/** A `!command` run locally, outside the Claude conversation (see `ClaudeShellActivity`). */
+function ShellRow({ item }: { item: ClaudeShellActivity }) {
+  const [expanded, setExpanded] = useState(true);
+  const failed = item.status === "error" || (item.status === "done" && (item.code ?? 0) !== 0);
+  const output = [item.stdout, item.stderr].filter(Boolean).join("\n").trim();
+  const hasDetails = item.status !== "running" && !!output;
+
+  return (
+    <div
+      className={`rt-claude-item mx-2.5 my-1 overflow-hidden rounded-lg border ${
+        failed ? "border-red-500/30 bg-red-500/[0.06]" : "border-amber-500/25 bg-amber-500/[0.06]"
+      } ${item.status === "running" ? "rt-claude-tool-running" : ""}`}
+    >
+      <button
+        type="button"
+        onClick={() => hasDetails && setExpanded((value) => !value)}
+        disabled={!hasDetails}
+        aria-expanded={hasDetails ? expanded : undefined}
+        className="group flex w-full items-center gap-2 px-2.5 py-2 text-left transition-[background-color] hover:bg-[var(--rt-surface-hover)]/45 disabled:cursor-default"
+      >
+        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${failed ? "text-red-500" : "text-amber-500"}`}>
+          <Icon name={item.status === "running" ? "sync" : "terminal"} size="0.82em" className={item.status === "running" ? "animate-spin" : ""} />
+        </span>
+        <span className={`shrink-0 text-[0.78em] font-semibold ${failed ? "text-red-500" : "text-amber-500"}`}>
+          {item.status === "running" ? "Running" : "Ran"}
+        </span>
+        <span className="rt-text-muted min-w-0 flex-1 truncate font-mono text-[0.74em]" title={item.command}>
+          {item.command}
+        </span>
+        {item.status === "done" && item.code !== 0 && (
+          <span className="shrink-0 font-mono text-[0.7em] font-semibold text-red-500">exit {item.code}</span>
+        )}
+        {item.status !== "running" && (
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${failed ? "bg-red-500" : "bg-amber-500"}`} />
+        )}
+        {hasDetails && (
+          <Icon name={expanded ? "chevronDown" : "chevronRight"} size="0.8em" className="rt-text-faint shrink-0" />
+        )}
+      </button>
+
+      {expanded && hasDetails && (
+        <pre className="rt-text-muted max-h-56 overflow-auto border-t border-[var(--rt-border)] p-2.5 font-mono text-[0.75em] leading-relaxed whitespace-pre-wrap">
+          {output}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function QuestionCard({
   item,
   onAnswer,
-  onOpenCli,
+  onCustomAnswer,
 }: {
   item: ClaudeQuestionActivity;
   onAnswer?: (question: ClaudeQuestionActivity, answers: number[][]) => boolean;
-  onOpenCli?: () => void;
+  onCustomAnswer?: (question: ClaudeQuestionActivity, text: string) => boolean;
 }) {
   const [selections, setSelections] = useState<Record<number, number[]>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customText, setCustomText] = useState("");
 
   useEffect(() => {
     if (item.status !== "running") setSubmitted(false);
@@ -304,24 +356,54 @@ function QuestionCard({
         ))}
       </div>
 
+      {customOpen && (
+        <div className="border-t border-current/10 px-3 py-2.5">
+          <textarea
+            autoFocus
+            value={customText}
+            onChange={(event) => setCustomText(event.target.value)}
+            disabled={submitted}
+            placeholder="Type a custom answer…"
+            rows={2}
+            className="w-full resize-none rounded-lg border border-[var(--rt-border)] bg-[var(--rt-subsurface)] px-2.5 py-2 text-[0.78em] outline-none focus:border-[var(--rt-accent)] disabled:opacity-60"
+          />
+        </div>
+      )}
+
       <footer className="flex items-center justify-end gap-2 border-t border-current/10 px-3 py-2">
+        {onCustomAnswer && (
+          <button
+            type="button"
+            disabled={submitted}
+            onClick={() => setCustomOpen((current) => !current)}
+            className="rt-btn px-2 py-1 text-[0.7em] font-medium disabled:opacity-40"
+          >
+            {customOpen ? "Use options instead" : "Custom answer"}
+          </button>
+        )}
         <button
           type="button"
-          onClick={onOpenCli}
-          className="rt-btn px-2 py-1 text-[0.7em] font-medium"
-        >
-          Custom answer in CLI
-        </button>
-        <button
-          type="button"
-          disabled={!ready || submitted || !onAnswer}
+          disabled={
+            submitted ||
+            (customOpen ? !customText.trim() || !onCustomAnswer : !ready || !onAnswer)
+          }
           onClick={() => {
+            if (customOpen) {
+              if (onCustomAnswer?.(item, customText.trim())) setSubmitted(true);
+              return;
+            }
             const answers = item.questions.map((_, index) => selections[index] ?? []);
             if (onAnswer?.(item, answers)) setSubmitted(true);
           }}
           className="rt-btn-active rounded-md px-2.5 py-1 text-[0.7em] font-semibold disabled:opacity-40"
         >
-          {submitted ? "Sending…" : item.questions.length > 1 ? "Submit answers" : "Answer Claude"}
+          {submitted
+            ? "Sending…"
+            : customOpen
+              ? "Send"
+              : item.questions.length > 1
+                ? "Submit answers"
+                : "Answer Claude"}
         </button>
       </footer>
     </section>
@@ -331,15 +413,16 @@ function QuestionCard({
 function TimelineItem({
   item,
   onAnswerQuestion,
-  onOpenCli,
+  onCustomAnswer,
 }: {
   item: ClaudeTimelineItem;
   onAnswerQuestion?: (question: ClaudeQuestionActivity, answers: number[][]) => boolean;
-  onOpenCli?: () => void;
+  onCustomAnswer?: (question: ClaudeQuestionActivity, text: string) => boolean;
 }) {
   if (item.kind === "tool") return <ToolRow tool={item} />;
+  if (item.kind === "shell") return <ShellRow item={item} />;
   if (item.kind === "question") {
-    return <QuestionCard item={item} onAnswer={onAnswerQuestion} onOpenCli={onOpenCli} />;
+    return <QuestionCard item={item} onAnswer={onAnswerQuestion} onCustomAnswer={onCustomAnswer} />;
   }
   if (item.kind === "user") {
     return (
@@ -381,13 +464,13 @@ export function ClaudeTranscript({
   status,
   partialText = "",
   onAnswerQuestion,
-  onOpenCli,
+  onCustomAnswer,
 }: {
   items: ClaudeTimelineItem[];
   status: ClaudeRunStatus;
   partialText?: string;
   onAnswerQuestion?: (question: ClaudeQuestionActivity, answers: number[][]) => boolean;
-  onOpenCli?: () => void;
+  onCustomAnswer?: (question: ClaudeQuestionActivity, text: string) => boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -447,7 +530,7 @@ export function ClaudeTranscript({
               key={item.id}
               item={item}
               onAnswerQuestion={onAnswerQuestion}
-              onOpenCli={onOpenCli}
+              onCustomAnswer={onCustomAnswer}
             />
           ))
         )}

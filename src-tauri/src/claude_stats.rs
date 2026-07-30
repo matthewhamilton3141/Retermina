@@ -203,6 +203,23 @@ pub fn get_claude_token_usage(cwd: String, session_id: Option<String>) -> Claude
     read_usage(&cwd, session_id.as_deref())
 }
 
+/// Tauri command: return every parsed stream-json record from a session's
+/// persisted transcript — used by the Agent view to backfill whatever
+/// happened while the CLI (a separate `claude` process resuming the same
+/// session) was active, since the headless agent has no other way to observe
+/// that activity. Returns an empty list (not an error) when the session has
+/// no transcript yet (never persisted, or the folder/session don't exist).
+#[tauri::command]
+pub fn read_claude_session_transcript(cwd: String, session_id: String) -> Vec<Value> {
+    let Some(dir) = project_dir(&cwd) else { return Vec::new(); };
+    let path = dir.join(format!("{session_id}.jsonl"));
+    let Ok(content) = std::fs::read_to_string(&path) else { return Vec::new(); };
+    content
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect()
+}
+
 /// Claude Code's six built-in UI theme identifiers. Retermina currently selects
 /// the stock light/dark variants to retain Claude's full colour treatment; the
 /// complete list still guards the command against writing an unknown value.

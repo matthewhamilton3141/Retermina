@@ -24,12 +24,12 @@ describe("Claude workspace session isolation", () => {
     const sessions = useClaudeSessions.getState();
     sessions.beginSession("workspace-a", "session-a");
     sessions.beginSession("workspace-b", "session-b");
-    sessions.ingest("workspace-a", "session-a", 0, {
+    sessions.ingest("workspace-a", "session-a", "session-a:0", {
       type: "user",
       timestamp: "2026-07-24T01:00:00.000Z",
       message: { content: "Prompt A" },
     });
-    sessions.ingest("workspace-b", "session-b", 0, {
+    sessions.ingest("workspace-b", "session-b", "session-b:0", {
       type: "user",
       timestamp: "2026-07-24T01:00:00.000Z",
       message: { content: "Prompt B" },
@@ -79,7 +79,7 @@ describe("Claude workspace session isolation", () => {
     expect(session.items[0]).toMatchObject({ kind: "notice", text: "Interrupted" });
 
     // A late `[Request interrupted by user]` record must not add a second notice.
-    store.ingest("workspace-a", "session-a", 0, {
+    store.ingest("workspace-a", "session-a", "session-a:0", {
       type: "user",
       timestamp: "2026-07-24T01:00:00.000Z",
       message: { content: "[Request interrupted by user]" },
@@ -97,7 +97,7 @@ describe("Claude workspace session isolation", () => {
       resetAt: 1_800_000_000_000,
       detectedAt: 1_799_000_000_000,
     });
-    store.ingest("workspace-a", "session-a", 1, {
+    store.ingest("workspace-a", "session-a", "session-a:1", {
       type: "assistant",
       timestamp: "2026-07-24T01:00:00.000Z",
       message: {

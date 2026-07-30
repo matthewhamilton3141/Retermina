@@ -70,11 +70,27 @@ export interface ClaudeNotice extends TimelineBase {
   tone: "muted" | "error";
 }
 
+/**
+ * A `!command` run locally in the Agent view — bash-mode has no headless
+ * stream-json equivalent (Claude just treats `!ls` as literal chat text), so
+ * this runs the command directly via the same one-shot shell bridge other
+ * panels use, entirely outside the Claude conversation.
+ */
+export interface ClaudeShellActivity extends TimelineBase {
+  kind: "shell";
+  command: string;
+  status: "running" | "done" | "error";
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
 export type ClaudeTimelineItem =
   | ClaudeUserMessage
   | ClaudeAssistantMessage
   | ClaudeToolActivity
   | ClaudeQuestionActivity
+  | ClaudeShellActivity
   | ClaudeNotice;
 
 export interface ClaudeTranscriptSnapshot {

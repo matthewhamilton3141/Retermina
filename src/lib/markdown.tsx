@@ -44,6 +44,34 @@ function renderInline(text: string): ReactNode[] {
 const BLOCK_BREAK = /^(#{1,6}\s|```|>\s?|\s*[-*+]\s+|\s*\d+\.\s+|(?:-{3,}|\*{3,}|_{3,})\s*$)/;
 const HEADING_SIZE = ["text-xl", "text-lg", "text-base", "text-sm", "text-sm", "text-xs"];
 
+/**
+ * Collect consecutive list-item lines matching `itemPattern`, tolerating blank
+ * lines between items (a "loose list" — common in Claude's own output). A
+ * blank line only ends the list once no further item follows it; otherwise a
+ * fresh `<ol>`/`<ul>` per item would each restart its own CSS counter at 1.
+ */
+function collectListItems(lines: string[], start: number, itemPattern: RegExp): { items: string[]; next: number } {
+  const items: string[] = [];
+  let i = start;
+  while (i < lines.length) {
+    if (itemPattern.test(lines[i])) {
+      items.push(lines[i].replace(itemPattern, ""));
+      i++;
+      continue;
+    }
+    if (lines[i].trim() === "") {
+      let j = i;
+      while (j < lines.length && lines[j].trim() === "") j++;
+      if (j < lines.length && itemPattern.test(lines[j])) {
+        i = j;
+        continue;
+      }
+    }
+    break;
+  }
+  return { items, next: i };
+}
+
 export function renderMarkdown(src: string): ReactNode {
   const lines = src.split("\n");
   const blocks: ReactNode[] = [];
@@ -98,8 +126,8 @@ export function renderMarkdown(src: string): ReactNode {
     }
 
     if (/^\s*[-*+]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*+]\s+/, "")); i++; }
+      const { items, next } = collectListItems(lines, i, /^\s*[-*+]\s+/);
+      i = next;
       blocks.push(
         <ul key={key++} className="my-2 list-disc space-y-0.5 pl-5">
           {items.map((it, j) => <li key={j}>{renderInline(it)}</li>)}
@@ -109,8 +137,8 @@ export function renderMarkdown(src: string): ReactNode {
     }
 
     if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i++; }
+      const { items, next } = collectListItems(lines, i, /^\s*\d+\.\s+/);
+      i = next;
       blocks.push(
         <ol key={key++} className="my-2 list-decimal space-y-0.5 pl-5">
           {items.map((it, j) => <li key={j}>{renderInline(it)}</li>)}

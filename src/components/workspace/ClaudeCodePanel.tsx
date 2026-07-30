@@ -29,13 +29,17 @@ import {
   detectsClaudePermissionRequest,
 } from "../../lib/claudeLimit";
 import {
+  answerMcpQuestion,
   interruptClaudeAgent,
+  readClaudeSessionTranscript,
   sendClaudeAgentMessage,
   startClaudeAgent,
   stopClaudeAgent,
 } from "../../lib/claudeAgent";
 import { getClaudeTokenUsage, setClaudeTheme, type ClaudeTokenUsage } from "../../lib/fs";
 import { prettyPath } from "../../lib/format";
+import { closePty } from "../../lib/pty";
+import { runBackgroundCommand } from "../../lib/system";
 import { claudeThemeForEngine } from "../../lib/theme";
 import type {
   ClaudePermissionMode,
@@ -90,7 +94,6 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
   const pendingSubmitRef = useRef<number | null>(null);
   const outputBufferRef = useRef("");
   const lastLimitKeyRef = useRef("");
-  const revealedQuestionRef = useRef<string | null>(null);
   // Whether Claude has actually written a transcript for the current session.
   // `--resume` fails hard on a session that was never persisted (Claude sat idle
   // at its welcome screen), so a restart (theme/permission/model change) must
@@ -111,6 +114,8 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
   const markSubmitted = useClaudeSessions((state) => state.markSubmitted);
   const markInterrupted = useClaudeSessions((state) => state.markInterrupted);
   const pushNotice = useClaudeSessions((state) => state.pushNotice);
+  const addShellItem = useClaudeSessions((state) => state.addShellItem);
+  const updateShellItem = useClaudeSessions((state) => state.updateShellItem);
   const setLimit = useClaudeSessions((state) => state.setLimit);
   const removeSession = useClaudeSessions((state) => state.removeSession);
 
@@ -134,17 +139,15 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
   const setModelChoice = useClaudeWorkspacePreferences((state) => state.setModel);
   const view = storedView ?? "agent";
 
-  // Once the CLI has been opened, keep it mounted for the panel's lifetime.
-  useEffect(() => {
-    if (view === "cli") setCliMounted(true);
-  }, [view]);
-
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [restartNonce, setRestartNonce] = useState(0);
-  // The CLI terminal mounts on first open and then stays mounted (even while the
-  // Agent view is showing) so switching back and forth never resets it.
-  const [cliMounted, setCliMounted] = useState(false);
+  // The invisible warm-up terminal (see the render section) mounts once on
+  // boot and stays mounted for the panel's lifetime.
+  const [warmupMounted, setWarmupMounted] = useState(false);
+  // Forces a fresh mount (and thus a fresh --resume) each time the real,
+  // user-visible CLI tab is entered — see `switchClaudeView`.
+  const [cliNonce, setCliNonce] = useState(0);
   // Brief loader shown in the Agent view while Claude warms up on boot.
   const [booting, setBooting] = useState(true);
   // A model switch awaiting the user's confirmation (only when a chat is live).
@@ -181,12 +184,15 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     };
   }, []);
 
-  // Warm the interactive CLI in the *background* on boot — Claude fully
-  // initialises there (including any first-run step the headless agent can't do)
-  // without ever showing the terminal. The Agent view stays put and just shows a
-  // brief loader (see `booting`), so the hand-off is invisible.
+  // Warm an invisible, throwaway CLI in the *background* on boot — Claude
+  // fully initialises there (including any first-run step the headless agent
+  // can't do) without ever showing the terminal. The Agent view stays put and
+  // just shows a brief loader (see `booting`), so the hand-off is invisible.
+  // This is an unrelated "auto" session (see `createWarmupCommand`), never the
+  // visible CLI tab, so it never competes with the Agent for the shared
+  // session id.
   useEffect(() => {
-    if (themeReady) setCliMounted(true);
+    if (themeReady) setWarmupMounted(true);
   }, [themeReady]);
 
   // Clear the Agent's boot loader once its subprocess is live (with a short
@@ -198,17 +204,34 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     return () => window.clearTimeout(timer);
   }, [booting, connected]);
 
-  // The CLI view is an independent, persistent interactive Claude terminal. It
-  // is kept mounted once opened so toggling never resets it, and runs its own
-  // (auto) session rather than sharing the Agent's stream-json session — Claude
-  // rejects two live processes on one session id.
-  const createClaudeCommand = useCallback(() => {
+  // The invisible warm-up terminal's command — deliberately has no session id
+  // at all (an "auto" session) so it never contends with the Agent's shared
+  // `sessionId`. Its only job is to run somewhere the first-run trust dialog
+  // (or any other prompt) can be caught by `handleTerminalOutput`.
+  const createWarmupCommand = useCallback(() => {
     const activeMode =
       useClaudeSessions.getState().sessions[workspaceId]?.permissionMode ?? permissionMode;
     const args = ["claude", "--permission-mode", activeMode];
     if (modelChoice !== "default") args.push("--model", modelChoice);
     return args.map(shellQuote).join(" ");
   }, [modelChoice, permissionMode, workspaceId]);
+
+  // The CLI view is the SAME conversation as the Agent view, just rendered by
+  // Claude's own interactive TUI instead of the structured timeline. It only
+  // runs while the CLI tab is actually active (see the on-demand mount below)
+  // and always resumes the shared `sessionId` — Claude rejects two live
+  // processes on one session id, so `switchClaudeView` guarantees the Agent's
+  // process has fully stopped before this ever launches.
+  const createClaudeCommand = useCallback(() => {
+    const activeMode =
+      useClaudeSessions.getState().sessions[workspaceId]?.permissionMode ?? permissionMode;
+    const args = ["claude", "--permission-mode", activeMode];
+    if (modelChoice !== "default") args.push("--model", modelChoice);
+    if (sessionId) {
+      args.push(sessionEstablishedRef.current ? "--resume" : "--session-id", sessionId);
+    }
+    return args.map(shellQuote).join(" ");
+  }, [modelChoice, permissionMode, sessionId, workspaceId]);
 
   // Drive the Agent view with a managed stream-json Claude subprocess: it
   // streams structured records straight over stdout (no fragile file-tailing).
@@ -243,46 +266,61 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
       setStatus(workspaceId, "connecting");
     }
 
-    void startClaudeAgent({
-      cwd,
-      sessionId: id,
-      permissionMode: agentPermissionMode,
-      model: modelChoice,
-      resume: sessionEstablishedRef.current,
-      onEvent: (event) => {
+    // Backfill whatever happened while the CLI (a separate process resuming
+    // this same session) was active — the headless agent has no other way to
+    // observe that activity. The file's line index is a stable id, so
+    // re-running this on every (re)start is safe: already-seen lines are
+    // no-ops via the transcript's existing `seenRecords` dedup.
+    void readClaudeSessionTranscript(cwd, id)
+      .catch(() => [] as unknown[])
+      .then((records) => {
         if (disposed) return;
-        if (event.type === "record") {
-          sessionEstablishedRef.current = true;
-          ingest(workspaceId, id, agentIndexRef.current++, event.record);
-        } else if (event.type === "exit") {
-          setConnected(false);
-        }
-      },
-    })
-      .then((hid) => {
-        if (disposed) {
-          void stopClaudeAgent(hid);
-          return;
-        }
-        handleId = hid;
-        agentHandleRef.current = hid;
-        setConnected(true);
-        if (useClaudeSessions.getState().sessions[workspaceId]?.status === "connecting") {
-          setStatus(workspaceId, "idle");
-        }
-        // Flush any prompts queued before the agent was ready.
-        const pending = pendingPromptsRef.current.splice(0);
-        for (const prompt of pending) {
-          ingest(workspaceId, id, agentIndexRef.current++, {
-            type: "user",
-            timestamp: new Date().toISOString(),
-            message: { content: prompt },
+        if (records.length > 0) sessionEstablishedRef.current = true;
+        records.forEach((record, lineIndex) => {
+          ingest(workspaceId, id, `${id}:resume:${lineIndex}`, record);
+        });
+
+        void startClaudeAgent({
+          cwd,
+          sessionId: id,
+          permissionMode: agentPermissionMode,
+          model: modelChoice,
+          resume: sessionEstablishedRef.current,
+          onEvent: (event) => {
+            if (disposed) return;
+            if (event.type === "record") {
+              sessionEstablishedRef.current = true;
+              ingest(workspaceId, id, `${id}:${agentIndexRef.current++}`, event.record);
+            } else if (event.type === "exit") {
+              setConnected(false);
+            }
+          },
+        })
+          .then((hid) => {
+            if (disposed) {
+              void stopClaudeAgent(hid);
+              return;
+            }
+            handleId = hid;
+            agentHandleRef.current = hid;
+            setConnected(true);
+            if (useClaudeSessions.getState().sessions[workspaceId]?.status === "connecting") {
+              setStatus(workspaceId, "idle");
+            }
+            // Flush any prompts queued before the agent was ready.
+            const pending = pendingPromptsRef.current.splice(0);
+            for (const prompt of pending) {
+              ingest(workspaceId, id, `${id}:${agentIndexRef.current++}`, {
+                type: "user",
+                timestamp: new Date().toISOString(),
+                message: { content: prompt },
+              });
+              void sendClaudeAgentMessage(hid, prompt);
+            }
+          })
+          .catch((error) => {
+            if (!disposed) setError(workspaceId, String(error));
           });
-          void sendClaudeAgentMessage(hid, prompt);
-        }
-      })
-      .catch((error) => {
-        if (!disposed) setError(workspaceId, String(error));
       });
 
     return () => {
@@ -345,7 +383,7 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
           return;
         }
         // stream-json never echoes the user's turn, so add the bubble ourselves.
-        ingest(workspaceId, sessionId, agentIndexRef.current++, {
+        ingest(workspaceId, sessionId, `${sessionId}:${agentIndexRef.current++}`, {
           type: "user",
           timestamp: new Date().toISOString(),
           message: { content: prompt },
@@ -429,20 +467,43 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     [setLimit, setStatus, workspaceId],
   );
 
-  const changeView = useCallback(
-    (next: ClaudePanelView) => {
-      setView(workspaceId, next);
-      if (next === "cli") requestAnimationFrame(() => controlsRef.current?.focus());
-      else requestAnimationFrame(() => composerRef.current?.focus());
-    },
-    [setView, workspaceId],
-  );
-
   const restartClaude = useCallback(() => {
     setConnected(false);
     setStatus(workspaceId, "connecting");
     setRestartNonce((value) => value + 1);
   }, [setStatus, workspaceId]);
+
+  // The Agent and CLI tabs are the SAME conversation, not two separate ones —
+  // Claude Code refuses to run two live processes on one session id, so
+  // switching tabs must fully stop whichever side is active before the other
+  // one (re)connects with `--resume`. Awaiting the teardown (rather than
+  // relying on React's fire-and-forget unmount cleanup) avoids a race where
+  // the new process tries to resume before the old one has actually released
+  // the session.
+  const switchClaudeView = useCallback(
+    async (next: ClaudePanelView) => {
+      if (next === view) return;
+      if (next === "cli") {
+        const handle = agentHandleRef.current;
+        if (handle) {
+          agentHandleRef.current = null;
+          setConnected(false);
+          await stopClaudeAgent(handle);
+        }
+        setCliNonce((value) => value + 1);
+        setView(workspaceId, "cli");
+        requestAnimationFrame(() => controlsRef.current?.focus());
+      } else {
+        const cliSessionId = controlsRef.current?.sessionId ?? null;
+        controlsRef.current = null;
+        if (cliSessionId) await closePty(cliSessionId);
+        setView(workspaceId, "agent");
+        restartClaude();
+        requestAnimationFrame(() => composerRef.current?.focus());
+      }
+    },
+    [restartClaude, setView, view, workspaceId],
+  );
 
   const startFreshClaude = useCallback(() => {
     outputBufferRef.current = "";
@@ -488,39 +549,51 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     applyModel(next);
   };
 
-  const answerQuestion = useCallback(
-    (question: ClaudeQuestionActivity, answers: number[][]) => {
-      const controls = controlsRef.current;
-      if (!controls) return false;
+  // The question came from the headless Agent's `ask_user_question` MCP tool
+  // call (a stand-in for the built-in AskUserQuestion, which can't work
+  // without a TTY), so the answer goes back through the MCP bridge for *that*
+  // process — entirely within the agent view, never via the CLI terminal.
+  const submitQuestionAnswer = useCallback(
+    (question: ClaudeQuestionActivity, content: string) => {
+      const handle = agentHandleRef.current;
+      if (!handle || !sessionId || !content) return false;
 
-      question.questions.forEach((prompt, questionIndex) => {
-        const selected = [...(answers[questionIndex] ?? [])].sort((a, b) => a - b);
-        if (selected.length === 0) return;
-        let sequence = "";
-        let cursor = 0;
-        if (prompt.multiSelect) {
-          for (const optionIndex of selected) {
-            sequence += "\x1b[B".repeat(Math.max(0, optionIndex - cursor));
-            sequence += " ";
-            cursor = optionIndex;
-          }
-          sequence += "\r";
-        } else {
-          sequence = `${"\x1b[B".repeat(selected[0])}\r`;
-        }
-        window.setTimeout(
-          () => controlsRef.current?.write(sequence),
-          100 + questionIndex * 220,
-        );
+      ingest(workspaceId, sessionId, `${sessionId}:${agentIndexRef.current++}`, {
+        type: "user",
+        timestamp: new Date().toISOString(),
+        message: {
+          content: [{ type: "tool_result", tool_use_id: question.toolUseId, content }],
+        },
       });
-
-      window.setTimeout(
-        () => setStatus(workspaceId, "running"),
-        120 + answers.length * 220,
-      );
+      void answerMcpQuestion(handle, content);
       return true;
     },
-    [setStatus, workspaceId],
+    [ingest, sessionId, workspaceId],
+  );
+
+  const answerQuestion = useCallback(
+    (question: ClaudeQuestionActivity, answers: number[][]) => {
+      const parts = question.questions
+        .map((prompt, questionIndex) => {
+          const selected = [...(answers[questionIndex] ?? [])].sort((a, b) => a - b);
+          const labels = selected
+            .map((optionIndex) => prompt.options[optionIndex]?.label)
+            .filter((label): label is string => !!label);
+          if (labels.length === 0) return "";
+          return question.questions.length > 1
+            ? `${prompt.header}: ${labels.join(", ")}`
+            : `Selected: ${labels.join(", ")}`;
+        })
+        .filter(Boolean);
+      if (parts.length === 0) return false;
+      return submitQuestionAnswer(question, parts.join("\n"));
+    },
+    [submitQuestionAnswer],
+  );
+
+  const answerQuestionCustom = useCallback(
+    (question: ClaudeQuestionActivity, text: string) => submitQuestionAnswer(question, text.trim()),
+    [submitQuestionAnswer],
   );
 
   const openSchedule = () => {
@@ -542,6 +615,10 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     contextPct >= 0.85 ? "#ef4444" : contextPct >= 0.6 ? "#f59e0b" : "var(--rt-accent)";
   const canSubmit =
     connected && status !== "waiting" && status !== "limited" && status !== "exited";
+  // `!command` runs locally and never touches Claude, so it's always
+  // submittable regardless of the agent's connection/run state.
+  const isShellDraft = draft.trim().startsWith("!");
+  const canSubmitDraft = canSubmit || isShellDraft;
   // Only offer interrupt while Claude is actively writing a turn. When it's
   // waiting on the reader (a question/approval) there's nothing to stop.
   const canInterrupt = connected && status === "running";
@@ -601,12 +678,6 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
   };
 
   useEffect(() => {
-    if (!pendingQuestionId || revealedQuestionRef.current === pendingQuestionId) return;
-    revealedQuestionRef.current = pendingQuestionId;
-    if (view !== "agent") setView(workspaceId, "agent");
-  }, [pendingQuestionId, setView, view, workspaceId]);
-
-  useEffect(() => {
     setSlashSelection(0);
   }, [slashQuery]);
 
@@ -638,9 +709,49 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     [setDraft, workspaceId],
   );
 
+  const runShellCommand = useCallback(
+    (shellCommand: string) => {
+      const id = `local-shell-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      addShellItem(workspaceId, {
+        id,
+        kind: "shell",
+        timestamp: Date.now(),
+        command: shellCommand,
+        status: "running",
+        code: null,
+        stdout: "",
+        stderr: "",
+      });
+      runBackgroundCommand(shellCommand, cwd)
+        .then((result) => {
+          updateShellItem(workspaceId, id, {
+            status: result.code === 0 ? "done" : "error",
+            code: result.code,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          });
+        })
+        .catch((error) => {
+          updateShellItem(workspaceId, id, { status: "error", code: null, stderr: String(error) });
+        });
+    },
+    [addShellItem, cwd, updateShellItem, workspaceId],
+  );
+
   const submitDraft = useCallback(() => {
     const prompt = draft.trim();
-    if (!prompt || !canSubmit) return;
+    if (!prompt) return;
+    // `!command` runs locally — bash-mode has no headless stream-json
+    // equivalent (Claude just treats "!ls" as literal chat text), so this
+    // never touches Claude and works regardless of `canSubmit`.
+    if (prompt.startsWith("!")) {
+      setDraft(workspaceId, "");
+      setDismissedSlashDraft(null);
+      const shellCommand = prompt.slice(1).trim();
+      if (shellCommand) runShellCommand(shellCommand);
+      return;
+    }
+    if (!canSubmit) return;
     // `/model …` and `/mode …` are handled inline — never sent to Claude/CLI.
     if (settingInfo) {
       const options = filterClaudeSettingOptions(settingInfo.kind, settingInfo.query);
@@ -657,14 +768,21 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
       return;
     }
     const terminalCommand = prompt.startsWith("/") && command?.behavior !== "agent";
-    if (terminalCommand) changeView("cli");
-    writePrompt(prompt, true, !terminalCommand);
+    if (terminalCommand) {
+      // `switchClaudeView` is async (it awaits the Agent's teardown before the
+      // CLI can resume the shared session) — writePrompt must wait for `view`
+      // to actually flip to "cli" before it decides which branch to take.
+      void switchClaudeView("cli").then(() => writePrompt(prompt, true, false));
+    } else {
+      writePrompt(prompt, true, true);
+    }
     setDismissedSlashDraft(null);
   }, [
     applySetting,
     canSubmit,
-    changeView,
+    switchClaudeView,
     draft,
+    runShellCommand,
     settingInfo,
     settingSelection,
     slashCommands,
@@ -798,7 +916,7 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
       {status === "waiting" && view === "agent" && !hasPendingQuestion && (
         <button
           type="button"
-          onClick={() => changeView("cli")}
+          onClick={() => void switchClaudeView("cli")}
           className="rt-divider-b flex shrink-0 items-center gap-2 px-2.5 py-1.5 text-left"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -824,7 +942,7 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
               status={status}
               partialText={session?.partialText ?? ""}
               onAnswerQuestion={answerQuestion}
-              onOpenCli={() => changeView("cli")}
+              onCustomAnswer={answerQuestionCustom}
             />
           )}
           {session?.error && (
@@ -945,7 +1063,7 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
                       interruptClaude();
                       return;
                     }
-                    if (event.key === "Enter" && !event.shiftKey && canSubmit) {
+                    if (event.key === "Enter" && !event.shiftKey && canSubmitDraft) {
                       event.preventDefault();
                       submitDraft();
                     }
@@ -968,13 +1086,15 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
               ) : (
                 <button
                   type="submit"
-                  disabled={!draft.trim() || !canSubmit}
+                  disabled={!draft.trim() || !canSubmitDraft}
                   title={
-                    !connected
-                      ? "Claude is connecting"
-                      : status === "limited"
-                        ? "Schedule this prompt for the reset time"
-                        : "Send prompt (Enter)"
+                    isShellDraft
+                      ? "Run command locally (Enter)"
+                      : !connected
+                        ? "Claude is connecting"
+                        : status === "limited"
+                          ? "Schedule this prompt for the reset time"
+                          : "Send prompt (Enter)"
                   }
                   className="rt-btn-active flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-transform hover:-translate-y-px active:translate-y-0 disabled:opacity-35"
                 >
@@ -1020,12 +1140,15 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
             view === "cli" ? "visible" : "invisible pointer-events-none"
           }`}
         >
-          {/* The interactive Claude terminal is its own persistent session. It
-              mounts on first CLI open and stays mounted (no restartNonce key)
-              so toggling back and forth — or an Agent restart — never resets it. */}
-          {cliMounted &&
+          {/* The real, user-visible CLI: the SAME conversation as the Agent
+              view, resumed via `createClaudeCommand`. It only exists while this
+              tab is active — `switchClaudeView` guarantees the Agent process
+              has fully released the session first — and `cliNonce` forces a
+              fresh mount (and thus a fresh --resume) each time it's entered. */}
+          {view === "cli" &&
             (themeReady ? (
               <TerminalViewport
+                key={cliNonce}
                 cwd={cwd}
                 className="h-full w-full p-2"
                 initialCommand={createClaudeCommand}
@@ -1034,6 +1157,14 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
                 registerWithBus={false}
                 registerControls={(controls) => {
                   controlsRef.current = controls;
+                  if (!controls) return;
+                  // Flush any prompt(s) queued (by `writePrompt`) while this
+                  // CLI process was still connecting.
+                  const pending = pendingPromptsRef.current.splice(0);
+                  for (const prompt of pending) {
+                    controls.write(`\x1b[200~${prompt}\x1b[201~`);
+                    window.setTimeout(() => controlsRef.current?.write("\r"), 120);
+                  }
                 }}
               />
             ) : (
@@ -1043,6 +1174,25 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
               </div>
             ))}
         </div>
+
+        {/* Invisible, throwaway warm-up terminal: an unrelated "auto" session
+            that exists purely so a brand-new workspace's first-run Claude
+            trust dialog gets caught by `handleTerminalOutput` (which surfaces
+            the "needs approval" banner) instead of silently hanging the
+            headless Agent, which can't show an interactive prompt itself. It
+            never becomes the visible CLI tab and is unrelated to `sessionId`. */}
+        {warmupMounted && themeReady && (
+          <div className="pointer-events-none absolute inset-0 -z-10 opacity-0">
+            <TerminalViewport
+              cwd={cwd}
+              className="h-full w-full p-2"
+              initialCommand={createWarmupCommand}
+              autoFocus={false}
+              onOutput={handleTerminalOutput}
+              registerWithBus={false}
+            />
+          </div>
+        )}
       </div>
       <ClaudeControlBar
         status={status}
@@ -1054,7 +1204,7 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
         contextPct={contextPct}
         contextColor={contextColor}
         controlsDisabled={controlsDisabled}
-        onViewChange={changeView}
+        onViewChange={(next) => void switchClaudeView(next)}
         onPermissionModeChange={changePermissionMode}
         onModelChange={changeModel}
       />
