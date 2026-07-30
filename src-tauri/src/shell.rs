@@ -13,9 +13,58 @@
 //! user's full `PATH` (where `git`, `node`, etc. actually live).
 
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 use serde::Serialize;
+
+/// The user's full `PATH` as their *interactive* login shell assembles it,
+/// resolved once and cached for the app's lifetime.
+///
+/// A GUI-launched (Finder/Dock) app starts from the minimal launchd `PATH`
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`). Tools installed to e.g. `~/.npm-global/bin`
+/// or `~/.local/bin` — where `claude` commonly lives — are frequently added to
+/// `PATH` only in `~/.zshrc`, which a *non-interactive* login shell (`zsh -lc`,
+/// what we use for headless subprocesses) does not source. So probe the way a
+/// real terminal would (`-ilc`, interactive) and reuse that `PATH`. Returns
+/// `None` if the probe fails, leaving the inherited `PATH` untouched.
+pub(crate) fn interactive_login_path() -> Option<String> {
+    #[cfg(windows)]
+    {
+        None
+    }
+
+    #[cfg(not(windows))]
+    {
+        static CACHE: OnceLock<Option<String>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+                // Delimit the value with RS (0x1e, never present in a PATH) so
+                // noisy rc-file output (login banners, MOTD echoes) can't be
+                // mistaken for it. stdin is closed so an rc `read` can't hang us.
+                let output = Command::new(shell)
+                    .arg("-ilc")
+                    .arg(r#"printf '\036%s\036' "$PATH""#)
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
+                let text = String::from_utf8_lossy(&output.stdout);
+                let path = text.split('\u{1e}').nth(1)?.to_string();
+                (!path.is_empty()).then_some(path)
+            })
+            .clone()
+    }
+}
+
+/// Inject the resolved interactive-login `PATH` (see [`interactive_login_path`])
+/// into a command, so a GUI-launched app can find tools like `claude` that live
+/// on a `~/.zshrc`-only `PATH` entry. A no-op when the probe found nothing.
+pub(crate) fn apply_user_path(cmd: &mut Command) {
+    if let Some(path) = interactive_login_path() {
+        cmd.env("PATH", path);
+    }
+}
 
 /// Summary of the workspace Git repository used to gate contextual macros.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -84,8 +133,11 @@ fn shell_command(script: &str) -> Command {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let mut c = Command::new(shell);
         // `-l` (login) loads the user's profile so PATH matches their terminal;
-        // `-c` runs the script string.
+        // `-c` runs the script string. A non-interactive login shell still skips
+        // `~/.zshrc`, so also inject the interactive-login PATH for tools that
+        // live only on a `.zshrc`-set entry.
         c.arg("-lc").arg(script);
+        apply_user_path(&mut c);
         c
     }
 }

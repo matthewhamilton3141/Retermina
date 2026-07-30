@@ -175,7 +175,13 @@ pub fn start_claude_agent(
     ));
 
     // Run through a login shell so a GUI-launched app inherits the user's full
-    // PATH (where `claude`/`node` actually live).
+    // PATH (where `claude`/`node` actually live). A `-lc` login shell is *not*
+    // interactive, so it never sources `~/.zshrc` — where installers like
+    // `~/.npm-global/bin`/`~/.local/bin` commonly add `claude` to PATH. Inject
+    // the interactive-login PATH so the headless agent can find `claude` even
+    // when the app was launched from Finder (its own PATH is the bare launchd
+    // one). Without this the child exits instantly ("command not found") and the
+    // Agent view never connects — the send button stays disabled.
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
     let mut cmd = Command::new(shell);
     cmd.arg("-lc")
@@ -183,6 +189,7 @@ pub fn start_claude_agent(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    crate::shell::apply_user_path(&mut cmd);
     if let Some(dir) = resolve_dir(cwd) {
         cmd.current_dir(dir);
     }
