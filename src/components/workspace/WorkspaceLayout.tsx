@@ -411,7 +411,7 @@ export function WorkspaceLayout({ workspaceId, cwd, mode, active }: WorkspaceLay
               // a scaled ancestor would break their text selection.
               selfZoom={panel.kind === "terminal"}
             >
-              {renderer({ cwd, workspaceId, active })}
+              {renderer({ cwd, workspaceId, panelId: panel.id, active })}
             </PanelFrame>
           </div>
         );

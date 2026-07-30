@@ -15,7 +15,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { prettyPath } from "../lib/format";
+import { closePty } from "../lib/pty";
 import { useToastStore } from "./toast";
+import { ptySessionKey, usePtySessionsStore } from "./ptySessions";
 import { rectsOverlap } from "../lib/gridCollision";
 import {
   DEFAULT_PANEL_SIZE,
@@ -296,6 +298,27 @@ function patch(
   return tabs.map((tab) => (tab.id === id ? fn(tab) : tab));
 }
 
+/**
+ * Intentional close of a terminal panel: kill the survivable PTY the panel owns
+ * so it does NOT resurrect on reopen, and drop its session mapping. No-op for a
+ * panel with no live session on file. This is the opposite of detach-on-quit,
+ * where we deliberately leave the shell running for the host's grace window.
+ */
+function killTerminalSession(tabId: string, panelId: string) {
+  const key = ptySessionKey(tabId, panelId);
+  const sessionId = usePtySessionsStore.getState().lookup(key);
+  if (sessionId) void closePty(sessionId);
+  usePtySessionsStore.getState().forget(key);
+}
+
+/** Kill every terminal session bound to a tab (whole-tab close). */
+function killTabTerminalSessions(tab: WorkspaceTab) {
+  for (const panel of tab.panels) {
+    if (panel.kind === "terminal") killTerminalSession(tab.id, panel.id);
+  }
+  usePtySessionsStore.getState().forgetTab(tab.id);
+}
+
 /** Remember a hidden/closed panel's rect so a re-toggle can restore it. */
 function rememberSlot(
   tab: WorkspaceTab,
@@ -521,6 +544,11 @@ export const useWorkspacesStore = create<WorkspacesState>()(
             return { tabs, activeId, folderLayouts, pendingCloseId };
           });
 
+          // Intentional close → kill the tab's terminals so they don't
+          // resurrect. (Undo restores the layout but starts fresh shells; the
+          // live processes are gone — a deliberate close is treated as final.)
+          killTabTerminalSessions(removed);
+
           if (!wasLast) {
             useToastStore.getState().push({
               message: `Closed “${removed.title}”`,
@@ -573,7 +601,15 @@ export const useWorkspacesStore = create<WorkspacesState>()(
 
         setGrid: (id, grid) => set((s) => ({ tabs: patch(s.tabs, id, (t) => ({ ...t, grid })) })),
 
-        togglePanel: (id, kind) =>
+        togglePanel: (id, kind) => {
+          // Toggling the terminal panel off destroys its PTY — kill the
+          // survivable session so it doesn't reattach on reopen.
+          if (kind === "terminal") {
+            const tab = get().tabs.find((t) => t.id === id);
+            if (tab?.panels.some((p) => p.id === PANEL_IDS.terminal)) {
+              killTerminalSession(id, PANEL_IDS.terminal);
+            }
+          }
           set((s) => ({
             tabs: patch(s.tabs, id, (t) => {
               const targetKind = kind === "fileExplorer" ? "codeView" : kind;
@@ -590,9 +626,16 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               }
               return next;
             }),
-          })),
+          }));
+        },
 
-        closePanel: (id, panelId) =>
+        closePanel: (id, panelId) => {
+          // Closing a terminal panel destroys its PTY — kill the survivable
+          // session so it doesn't reattach on reopen.
+          const tab = get().tabs.find((t) => t.id === id);
+          if (tab?.panels.find((p) => p.id === panelId)?.kind === "terminal") {
+            killTerminalSession(id, panelId);
+          }
           set((s) => ({
             tabs: patch(s.tabs, id, (t) => ({
               ...t,
@@ -602,7 +645,8 @@ export const useWorkspacesStore = create<WorkspacesState>()(
               focusedId: t.focusedId === panelId ? null : t.focusedId,
               sidebarPanelId: t.sidebarPanelId === panelId ? null : t.sidebarPanelId,
             })),
-          })),
+          }));
+        },
 
         resetLayout: (id) => {
           const prev = get().tabs.find((t) => t.id === id);

@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "build:host": "cargo build --manifest-path src-tauri/Cargo.toml --bin session-host",
     "tauri": "tauri"
   },
   "dependencies": {
