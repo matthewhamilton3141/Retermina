@@ -139,7 +139,12 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
   const setModelChoice = useClaudeWorkspacePreferences((state) => state.setModel);
   const view = storedView ?? "agent";
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  // Seed from the persisted resume pointer so a relaunched app reopens the
+  // session that was active here (the mount effect below reads its transcript
+  // and starts the agent with `resume`), rather than minting a blank one.
+  const [sessionId, setSessionId] = useState<string | null>(
+    () => claudeWorkspacePreference(workspaceId).sessionId ?? null,
+  );
   const [connected, setConnected] = useState(false);
   const [restartNonce, setRestartNonce] = useState(0);
   // The invisible warm-up terminal (see the render section) mounts once on
@@ -255,6 +260,8 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
       const id = newClaudeSessionId();
       sessionEstablishedRef.current = false;
       beginSession(workspaceId, id);
+      // Persist the resume pointer so a relaunch reopens this same session.
+      useClaudeWorkspacePreferences.getState().setSessionId(workspaceId, id);
       setSessionId(id);
       return;
     }
@@ -262,6 +269,14 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     const id = sessionId;
     let disposed = false;
     let handleId: string | null = null;
+    // When `id` was seeded from the persisted resume pointer we skipped the mint
+    // branch above, so the live-session store has no entry for this workspace
+    // yet — and `ingest()` drops every record until one exists, leaving the
+    // Agent view blank. Establish it here (guarded so we never wipe an existing
+    // transcript when a matching session is already live).
+    if (useClaudeSessions.getState().sessions[workspaceId]?.sessionId !== id) {
+      beginSession(workspaceId, id);
+    }
     if (useClaudeSessions.getState().sessions[workspaceId]?.status !== "running") {
       setStatus(workspaceId, "connecting");
     }
@@ -511,6 +526,9 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     sessionEstablishedRef.current = false;
     setConnected(false);
     if (sessionId) removeSession(workspaceId, sessionId);
+    // Drop the resume pointer too — a deliberate "new chat" must not resurrect
+    // the old session on the next launch. The mint branch persists a fresh id.
+    useClaudeWorkspacePreferences.getState().setSessionId(workspaceId, null);
     setSessionId(null);
     setRestartNonce((value) => value + 1);
   }, [removeSession, sessionId, workspaceId]);

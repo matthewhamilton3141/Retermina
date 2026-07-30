@@ -17,6 +17,8 @@ export interface PanelRenderContext {
   cwd: string | null;
   /** The tab this panel is rendered in. */
   workspaceId: string;
+  /** This panel's grid id — used to bind a survivable PTY session to it. */
+  panelId: string;
   /** Whether this tab is the foreground one. */
   active: boolean;
 }
@@ -24,6 +26,7 @@ export interface PanelRenderContext {
 const TerminalPanel = memo(function TerminalPanel({
   cwd,
   workspaceId,
+  panelId,
   active,
 }: PanelRenderContext) {
   return (
@@ -31,6 +34,7 @@ const TerminalPanel = memo(function TerminalPanel({
       cwd={cwd}
       active={active}
       workspaceId={workspaceId}
+      panelId={panelId}
       onPopOut={() => useWorkspacesStore.getState().addTerminalPanel(workspaceId)}
     />
   );

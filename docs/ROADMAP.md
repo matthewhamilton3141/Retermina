@@ -5,6 +5,31 @@ leverage. The note that matters most for each is **"what actually determines the
 effort"** — several of these sound small and aren't (and one sounds big but is
 mostly already done).
 
+## In progress
+
+### Sessions survive a restart  _(picked up 2026-07-30)_
+Reopen Retermina after a quit / crash / update and find your terminals *back* —
+scrollback visible, in the right tabs + grid layout. Today they're gone: the
+running shells live only in Rust memory (`pty.rs` holds `Child`/`MasterPty`/
+writer handles in a `Mutex<HashMap>`), and `session.ts` deliberately persists
+paths only — *"never any PTY/terminal buffer."* Nothing is saved yet.
+
+Two distinct versions — **not** the same feature, don't conflate:
+
+- **Cheap — "looks restored" (doing this first):** persist each terminal's
+  scrollback to disk; on reopen, repaint it and spawn a *fresh* shell in the
+  same cwd. History + layout come back; anything that was *running* (dev server,
+  ssh) does not — it died with the app. Frontend-heavy + a modest disk-persist
+  path. Delivers ~80% of the "I trust this app" payoff.
+- **Real — "actually still running" (later, maybe never):** keep PTYs alive
+  outside the app (detached/daemon) and reconnect on reopen — the tmux model.
+  Deep `pty.rs` rewrite; treat as a separate epic, decide after the cheap
+  version ships.
+
+**Recommendation:** ship the cheap version, reassess before committing to the
+real one. Layout/tab restore already exists (persisted `retermina.workspaces` +
+per-folder layout memory), so this is mostly "add scrollback to the picture."
+
 ## Big bets (deferred — need real design, not a rushed first cut)
 
 ### Remote / SSH sessions
@@ -34,6 +59,14 @@ tokenless-by-default ethos (only the explain call needs Claude).
   the headline."
 
 ## Medium / later
+
+### Unified search box (Raycast / Arc style)
+Collapse the three separate search surfaces — `CommandPalette` (330 LOC),
+`FileSearch` (165), `ContentSearch` (192) — into one box that searches commands,
+files by name, text-in-files, recent folders, and git branches at once, grouped
+under headers. Not new capability; a merge of what exists, with the command
+palette as the host shell. Frontend-only, no Rust, low risk — the best
+effort-to-payoff of the recently-discussed ideas. Good quick win.
 
 ### Multiple windows
 Tauri multi-window is doable, but our state is Zustand-persisted single-workspace

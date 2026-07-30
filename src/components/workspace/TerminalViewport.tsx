@@ -7,12 +7,14 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 
 import {
+  attachPtySession,
   closePty,
   createPtySession,
   resizePty,
   writeToPty,
   type PtyEvent,
 } from "../../lib/pty";
+import { usePtySessionsStore } from "../../store/ptySessions";
 import { terminalBus } from "../../lib/terminalBus";
 import { terminalColorFgbg } from "../../lib/theme";
 import { resolveTerminalFontStack } from "../../lib/fonts";
@@ -85,6 +87,15 @@ export interface TerminalViewportProps {
    * expose its own paste/focus to {@link claudeBus}.
    */
   registerControls?: (controls: TerminalControls | null) => void;
+  /**
+   * Stable `${tabId}:${panelId}` key identifying a **survivable** terminal.
+   * When set, this viewport reattaches to the PTY that outlived a previous app
+   * process (replaying its scrollback) instead of spawning a fresh shell, and it
+   * does *not* kill the shell on unmount — only an explicit panel/tab close does
+   * (see the workspaces store). Leave unset for ephemeral terminals (split
+   * non-primary panes, the Claude CLI panel), which behave as before.
+   */
+  persistKey?: string;
 }
 
 /** Imperative handle to a live terminal, surfaced via `registerControls`. */
@@ -144,6 +155,7 @@ export function TerminalViewport({
   onInput,
   registerWrite,
   registerControls,
+  persistKey,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Re-claims the Iris bus for this terminal; populated once the PTY connects.
@@ -408,75 +420,106 @@ export function TerminalViewport({
       }
     };
 
-    createPtySession(
-      {
-        cwd,
-        cols: term.cols,
-        rows: term.rows,
-        // Seed the shell's COLORFGBG from the theme active at spawn time so
-        // tools like Claude Code emit colours legible on a light background.
-        colorFgbg: terminalColorFgbg(terminalThemeRef.current.background),
-      },
-      handleEvent,
-    )
-      .then((id) => {
-        if (disposed) {
-          void closePty(id); // unmounted before connect
+    // Wire up a connected session (fresh or reattached) into the viewport.
+    const finishConnect = (id: string, attached: boolean) => {
+      sessionId = id;
+      // Record the binding immediately so a fast unmount→remount (e.g. React
+      // StrictMode in dev) reattaches to this same shell rather than orphaning
+      // it and spawning a duplicate.
+      if (persistKey) usePtySessionsStore.getState().remember(persistKey, id);
+      if (disposed) {
+        // Unmounted before connect resolved: ephemeral terminals are killed;
+        // survivable ones stay alive for the remount/relaunch to reattach.
+        if (!persistKey) void closePty(id);
+        return;
+      }
+      for (const input of pendingInput) void writeToPty(id, input);
+      pendingInput.length = 0;
+      if (autoFocusRef.current) term.focus();
+      if (attached) {
+        // Reconnected to an already-running shell — never replay the auto-run
+        // command, and treat the line editor as ready.
+        initialCommandSent = true;
+        shellReady = true;
+      } else if (shellReady) {
+        // Fresh shell: fire the auto-run command once the line editor is ready
+        // (see sendInitialCommand). Fast shells may emit readiness before this
+        // resolves — send now; otherwise a fallback timer covers shells that
+        // never advertise bracketed paste.
+        sendInitialCommand(true);
+      } else if (!initialCommandSent) {
+        initialFallbackTimer = window.setTimeout(() => sendInitialCommand(false), 4000);
+      }
+      // Populate the drop-handler write ref for this specific PTY.
+      ptyWriteRef.current = (data) => void writeToPty(id, data);
+      // Hand the write fn to a parent (split panel broadcast) too.
+      registerWriteRef.current?.((data) => void writeToPty(id, data));
+      // Richer control handle: powers "send to Claude" (capture) and lets the
+      // Claude panel register its own paste/focus with claudeBus.
+      registerControlsRef.current?.({
+        write: (data) => void writeToPty(id, data),
+        focus: () => term.focus(),
+        getSelection: () => term.getSelection(),
+        getLastOutput,
+        sessionId: id,
+      });
+
+      if (registerWithBus) {
+        // Expose this session to Iris so it can run commands here. Registered
+        // through the module-level bus (not React state) so the command bar
+        // never re-renders this memoized panel. Stored in a ref too so a tab
+        // re-activation can re-claim the bus (see the `active` effect below).
+        const register = () =>
+          terminalBus.set({
+            sessionId: id,
+            run: (cmd) => void writeToPty(id, `${cmd}\r`),
+            write: (data) => void writeToPty(id, data),
+            focus: () => term.focus(),
+          });
+        registerBusRef.current = register;
+        register();
+      }
+    };
+
+    const connect = async () => {
+      // Reattach to a session that outlived a previous app process, if one is on
+      // file for this panel. On success the host replays its scrollback through
+      // handleEvent, then streams live — the shell never died.
+      const savedId = persistKey
+        ? usePtySessionsStore.getState().lookup(persistKey)
+        : undefined;
+      if (savedId) {
+        term.write("\r\n\x1b[2m⟳ reconnecting to your session…\x1b[0m\r\n");
+        const ok = await attachPtySession(
+          { sessionId: savedId, cols: term.cols, rows: term.rows },
+          handleEvent,
+        ).catch(() => false);
+        if (ok) {
+          finishConnect(savedId, true);
           return;
         }
-        sessionId = id;
-        for (const input of pendingInput) void writeToPty(id, input);
-        pendingInput.length = 0;
-        if (autoFocusRef.current) term.focus();
-        // Fire the auto-run command once per session, but only once the shell's
-        // line editor is ready (see sendInitialCommand). If the readiness signal
-        // already arrived (fast shells can emit it before this promise resolves)
-        // send now; otherwise a fallback timer sends plainly for shells that
-        // never advertise bracketed paste.
-        if (shellReady) {
-          sendInitialCommand(true);
-        } else if (!initialCommandSent) {
-          // Long fallback: normal zsh/bash always advertise bracketed paste (so
-          // the instant path above fires and this never runs). Only a shell that
-          // never emits the signal waits this out — better a slightly late clean
-          // launch than a premature plain send that races a heavy shell startup.
-          initialFallbackTimer = window.setTimeout(() => sendInitialCommand(false), 4000);
-        }
-        // Populate the drop-handler write ref for this specific PTY.
-        ptyWriteRef.current = (data) => void writeToPty(id, data);
-        // Hand the write fn to a parent (split panel broadcast) too.
-        registerWriteRef.current?.((data) => void writeToPty(id, data));
-        // Richer control handle: powers "send to Claude" (capture) and lets the
-        // Claude panel register its own paste/focus with claudeBus.
-        registerControlsRef.current?.({
-          write: (data) => void writeToPty(id, data),
-          focus: () => term.focus(),
-          getSelection: () => term.getSelection(),
-          getLastOutput,
-          sessionId: id,
-        });
+        // Stale mapping (session reaped past its grace window, or the host
+        // restarted) — drop it and fall through to a fresh shell.
+        if (persistKey) usePtySessionsStore.getState().forget(persistKey);
+        term.write("\x1b[2m(previous session ended — starting fresh)\x1b[0m\r\n");
+      }
+      const id = await createPtySession(
+        {
+          cwd,
+          cols: term.cols,
+          rows: term.rows,
+          // Seed the shell's COLORFGBG from the theme active at spawn time so
+          // tools like Claude Code emit colours legible on a light background.
+          colorFgbg: terminalColorFgbg(terminalThemeRef.current.background),
+        },
+        handleEvent,
+      );
+      finishConnect(id, false);
+    };
 
-        if (registerWithBus) {
-          // Expose this session to Iris so it can run commands here. Registered
-          // through the module-level bus (not React state) so the command bar
-          // never re-renders this memoized panel. Stored in a ref too so a tab
-          // re-activation can re-claim the bus (see the `active` effect below).
-          const register = () =>
-            terminalBus.set({
-              sessionId: id,
-              run: (cmd) => void writeToPty(id, `${cmd}\r`),
-              write: (data) => void writeToPty(id, data),
-              focus: () => term.focus(),
-            });
-          registerBusRef.current = register;
-          register();
-        }
-      })
-      .catch((error) => {
-        term.write(
-          `\r\n\x1b[31mFailed to start shell: ${String(error)}\x1b[0m\r\n`,
-        );
-      });
+    connect().catch((error) => {
+      term.write(`\r\n\x1b[31mFailed to start shell: ${String(error)}\x1b[0m\r\n`);
+    });
 
     // Track the last size sent to the PTY so a continuous grid resize doesn't
     // spam the backend: a panel resizes by many pixels but cols/rows only change
@@ -513,12 +556,16 @@ export function TerminalViewport({
       dataSub.dispose();
       if (sessionId) {
         terminalBus.clear(sessionId);
-        void closePty(sessionId);
+        // Survivable terminals are left running so they outlive an app
+        // quit/crash/update (and a same-session remount reattaches to them);
+        // only an explicit panel/tab close kills them (see the workspaces
+        // store). Ephemeral terminals are torn down here as before.
+        if (!persistKey) void closePty(sessionId);
       }
       term.dispose();
       termRef.current = null;
     };
-  }, [cwd]);
+  }, [cwd, persistKey]);
 
   // Recolor the live terminal when the engine changes, without recreating it.
   // xterm only applies a theme when handed a fresh object, hence the spread.

@@ -15,6 +15,7 @@ import { Fragment, memo, useCallback, useRef, useState } from "react";
 
 import Icon from "../Icon";
 import TerminalViewport, { type TerminalControls } from "./TerminalViewport";
+import { ptySessionKey } from "../../store/ptySessions";
 import { claudeBus, useClaudeTarget } from "../../lib/claudeBus";
 import { useToastStore } from "../../store/toast";
 
@@ -84,6 +85,7 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
   cwd,
   active = true,
   workspaceId,
+  panelId,
   onPopOut,
 }: {
   cwd: string | null;
@@ -91,6 +93,8 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
   active?: boolean;
   /** The tab this terminal lives in — used to reach its Claude Code panel. */
   workspaceId: string;
+  /** This terminal panel's grid id — binds the primary pane's survivable PTY. */
+  panelId: string;
   /**
    * Detach a pane into its own terminal panel on the workspace grid. Called
    * with no arguments — the caller adds a fresh terminal panel; this component
@@ -355,6 +359,10 @@ export const SplitTerminalPanel = memo(function SplitTerminalPanel({
                 cwd={cwd}
                 active={active}
                 className="h-full w-full"
+                // Only the primary pane binds a survivable session — splits are
+                // ephemeral (pane layout itself isn't persisted), so extra panes
+                // start fresh on reopen.
+                persistKey={idx === 0 ? ptySessionKey(workspaceId, panelId) : undefined}
                 onInput={(data) => handlePaneInput(pane.id, data)}
                 registerWrite={(write) => {
                   if (write) writesRef.current.set(pane.id, write);

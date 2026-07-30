@@ -6,6 +6,12 @@ mod fs;
 mod localhost;
 mod presets;
 mod pty;
+// The live-session host + its wire protocol are unix-only for now (unix-domain
+// sockets). `pub` so the `session-host` binary can reach `session_host::run`.
+#[cfg(unix)]
+pub mod session_host;
+#[cfg(unix)]
+pub mod session_proto;
 mod shell;
 mod terminal_import;
 mod vscode;
@@ -22,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             vscode::get_recent_workspaces,
             pty::create_pty_session,
+            pty::attach_pty_session,
             pty::write_to_pty,
             pty::resize_pty,
             pty::close_pty,

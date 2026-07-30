@@ -30,6 +30,31 @@ export async function createPtySession(
   return invoke<string>("create_pty_session", { options, onEvent: channel });
 }
 
+export interface AttachPtyOptions {
+  /** Host session id recorded when the session was first created. */
+  sessionId: string;
+  /** Current viewport size, so the reattached PTY resizes to match. */
+  cols: number;
+  rows: number;
+}
+
+/**
+ * Reattach to a session that outlived a previous app process (quit/crash/update).
+ * On success the host replays the scrollback produced while we were gone over
+ * `onEvent`, then streams live output — the shell never died. Resolves:
+ *   - `true`  — reattached; `onEvent` is now live.
+ *   - `false` — the session is gone (reaped past its grace window, or the host
+ *               restarted); the caller should create a fresh session instead.
+ */
+export async function attachPtySession(
+  options: AttachPtyOptions,
+  onEvent: (event: PtyEvent) => void,
+): Promise<boolean> {
+  const channel = new Channel<PtyEvent>();
+  channel.onmessage = onEvent;
+  return invoke<boolean>("attach_pty_session", { options, onEvent: channel });
+}
+
 /** Send user input (keystrokes / paste) to the shell. */
 export function writeToPty(sessionId: string, data: string): Promise<void> {
   return invoke<void>("write_to_pty", { sessionId, data });
