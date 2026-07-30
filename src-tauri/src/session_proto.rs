@@ -36,8 +36,12 @@ pub fn socket_path() -> PathBuf {
 }
 
 /// Requests the app sends to the host (one per connection, as the first line).
+///
+/// `rename_all` renames the variants (the `op` tag) to camelCase; `rename_all_fields`
+/// is needed to also camelCase the fields *inside* the variants (e.g. `session_id`
+/// → `sessionId`), so the request fields match the camelCase reply structs below.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Request {
     /// Open a fresh PTY + shell; reply is [`CreateReply`], then a raw pipe.
     Create {
