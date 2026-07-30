@@ -4,6 +4,9 @@ version = "0.5.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+# The package now has two binaries (the app + the session-host sidecar), so
+# `cargo run` / `tauri dev` need to be told which is the default.
+default-run = "retermina"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
