@@ -56,7 +56,6 @@ mod unix_impl {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::os::unix::process::CommandExt;
-    use std::path::PathBuf;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
@@ -94,24 +93,6 @@ mod unix_impl {
         stream.flush()
     }
 
-    /// Locate the `session-host` binary — next to the app executable (dev:
-    /// `target/debug/session-host`; release: the bundled sidecar).
-    fn host_binary_path() -> Option<PathBuf> {
-        let exe = std::env::current_exe().ok()?;
-        let dir = exe.parent()?;
-        let direct = dir.join("session-host");
-        if direct.exists() {
-            return Some(direct);
-        }
-        // Sidecars are named with a target-triple suffix; take the first match.
-        for entry in std::fs::read_dir(dir).ok()?.flatten() {
-            if entry.file_name().to_string_lossy().starts_with("session-host") {
-                return Some(entry.path());
-            }
-        }
-        None
-    }
-
     /// Ensure a host is reachable: connect if one is already running (it may
     /// have survived a previous app process), otherwise spawn one — detached, so
     /// it outlives *this* app too — and wait for its socket.
@@ -120,8 +101,12 @@ mod unix_impl {
             return Ok(());
         }
         if connect().is_err() {
-            let bin = host_binary_path().ok_or("session-host binary not found")?;
-            std::process::Command::new(&bin)
+            // Re-exec *this* binary as the session host (handled in main.rs).
+            // Same executable, so there's nothing extra to locate or bundle —
+            // and it's already the signed, universal app binary in release.
+            let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+            std::process::Command::new(&exe)
+                .arg("__session-host")
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
@@ -129,7 +114,7 @@ mod unix_impl {
                 // the host down with it — the whole point of survival.
                 .process_group(0)
                 .spawn()
-                .map_err(|e| format!("spawn session-host: {e}"))?;
+                .map_err(|e| format!("spawn session host: {e}"))?;
 
             let deadline = Instant::now() + Duration::from_secs(5);
             while connect().is_err() {

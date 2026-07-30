@@ -61,10 +61,13 @@ fn survives_detach_reattach_and_close() {
     std::fs::create_dir_all(&dir).unwrap();
     let sock = dir.join("s.sock");
 
-    let mut host = Command::new(env!("CARGO_BIN_EXE_session-host"))
+    // Drive the real runtime path: the app binary re-exec'd as the host
+    // (`retermina __session-host`), exactly how the app spawns it in production.
+    let mut host = Command::new(env!("CARGO_BIN_EXE_retermina"))
+        .arg("__session-host")
         .env("RETERMINA_SESSION_SOCK", &sock)
         .spawn()
-        .expect("spawn session-host");
+        .expect("spawn session host");
 
     // Wait for the socket to come up.
     let up = Instant::now() + Duration::from_secs(5);
