@@ -56,10 +56,12 @@ mod unix_impl {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::os::unix::process::CommandExt;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
     use tauri::ipc::Channel;
 
     use super::{AttachPtyOptions, CreatePtyOptions, PtyEvent};
@@ -67,17 +69,36 @@ mod unix_impl {
         read_header_line, socket_path, AttachReply, CreateReply, Request,
     };
 
-    /// Client-side state: the write half of each session's data connection
-    /// (keyed by host session id), plus one-time host bootstrap.
+    /// A session lives either in the out-of-process host (survivable across an
+    /// app restart) or, when the host can't be reached, in-process (works but
+    /// doesn't survive — the fallback that keeps terminals working no matter
+    /// what).
+    enum Backend {
+        /// Write half of the host data connection.
+        Host(UnixStream),
+        Local(LocalPty),
+    }
+
+    struct LocalPty {
+        writer: Box<dyn Write + Send>,
+        master: Box<dyn MasterPty + Send>,
+        child: Box<dyn Child + Send + Sync>,
+    }
+
     #[derive(Default)]
     pub struct PtyManager {
         inner: Mutex<Inner>,
+        /// Id counter for in-process fallback sessions.
+        local_ids: AtomicU64,
     }
 
     #[derive(Default)]
     struct Inner {
-        sessions: HashMap<String, UnixStream>,
+        sessions: HashMap<String, Backend>,
         bootstrapped: bool,
+        /// Set once the host proves unreachable, so we stop paying the spawn
+        /// timeout on every new terminal and go straight to the in-process path.
+        host_unavailable: bool,
         /// Held open for the app's lifetime so the host knows the app is alive.
         _keepalive: Option<UnixStream>,
     }
@@ -132,14 +153,15 @@ mod unix_impl {
         Ok(())
     }
 
-    /// Pump a session's raw output from the host socket to the frontend channel,
-    /// exactly mirroring the old in-process reader thread's event contract.
-    fn spawn_reader(mut read_half: UnixStream, on_event: Channel<PtyEvent>) {
+    /// Pump a session's raw output to the frontend channel, mirroring the old
+    /// in-process reader thread's event contract. Generic over the source so it
+    /// serves both a host socket (`UnixStream`) and a local PTY reader.
+    fn spawn_reader<R: Read + Send + 'static>(mut reader: R, on_event: Channel<PtyEvent>) {
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
-                match read_half.read(&mut buf) {
-                    Ok(0) | Err(_) => break, // host closed pipe → shell exited
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break, // EOF → shell exited / host closed pipe
                     Ok(n) => {
                         let chunk = STANDARD.encode(&buf[..n]);
                         if on_event.send(PtyEvent::Data { chunk }).is_err() {
@@ -152,6 +174,109 @@ mod unix_impl {
         });
     }
 
+    /// Whether the host is usable. Bootstraps it on first call; if that fails,
+    /// latches `host_unavailable` so every terminal from here on uses the
+    /// in-process fallback without re-paying the spawn timeout.
+    fn host_ready(inner: &mut Inner) -> bool {
+        if inner.host_unavailable {
+            return false;
+        }
+        // Escape hatch to force the in-process fallback (for testing it, or as an
+        // emergency off-switch for the whole survival mechanism).
+        if std::env::var_os("RETERMINA_DISABLE_SESSION_HOST").is_some() {
+            inner.host_unavailable = true;
+            return false;
+        }
+        if inner.bootstrapped {
+            return true;
+        }
+        match ensure_host(inner) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("[pty] session host unavailable, using in-process fallback: {e}");
+                inner.host_unavailable = true;
+                false
+            }
+        }
+    }
+
+    /// Ask the host to create a session; on success returns its id plus the read
+    /// half to pump. Leaves `on_event` untouched (the caller only consumes it
+    /// once the backend is decided), so a failure can cleanly fall back.
+    fn host_create(inner: &mut Inner, options: &CreatePtyOptions) -> Result<(String, UnixStream), String> {
+        let mut stream = connect().map_err(|e| e.to_string())?;
+        send_request(
+            &mut stream,
+            &Request::Create {
+                cwd: options.cwd.clone(),
+                cols: options.cols.max(1),
+                rows: options.rows.max(1),
+                color_fgbg: options.color_fgbg.clone(),
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        let line = read_header_line(&mut stream).map_err(|e| e.to_string())?;
+        let reply: CreateReply =
+            serde_json::from_str(&line).map_err(|_| format!("host rejected create: {line}"))?;
+        let write_half = stream.try_clone().map_err(|e| e.to_string())?;
+        inner.sessions.insert(reply.session_id.clone(), Backend::Host(write_half));
+        Ok((reply.session_id, stream))
+    }
+
+    /// Spawn an in-process PTY (the fallback) — the same login-shell setup the
+    /// host uses, kept here so terminals work even with no host.
+    fn create_local(
+        local_ids: &AtomicU64,
+        inner: &mut Inner,
+        options: CreatePtyOptions,
+        on_event: Channel<PtyEvent>,
+    ) -> Result<String, String> {
+        let size = PtySize {
+            rows: options.rows.max(1),
+            cols: options.cols.max(1),
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let pair = native_pty_system().openpty(size).map_err(|e| e.to_string())?;
+        let child = pair.slave.spawn_command(local_command(&options)).map_err(|e| e.to_string())?;
+        drop(pair.slave);
+        let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        // Distinct id space so a persisted mapping to a local id simply misses on
+        // reattach (host says "no such session") and creates fresh — correct,
+        // since a local session never survived anyway.
+        let id = format!("local-{}", local_ids.fetch_add(1, Ordering::Relaxed));
+        spawn_reader(reader, on_event);
+        inner.sessions.insert(id.clone(), Backend::Local(LocalPty { writer, master: pair.master, child }));
+        Ok(id)
+    }
+
+    fn local_command(options: &CreatePtyOptions) -> CommandBuilder {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        let mut cmd = CommandBuilder::new(&shell);
+        cmd.arg("-l");
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        if let Some(fgbg) = options.color_fgbg.clone().filter(|s| !s.is_empty()) {
+            cmd.env("COLORFGBG", fgbg);
+        }
+        if let Some(dir) = resolve_cwd(options.cwd.clone()) {
+            cmd.cwd(dir);
+        }
+        cmd
+    }
+
+    fn resolve_cwd(cwd: Option<String>) -> Option<std::path::PathBuf> {
+        let path = std::path::PathBuf::from(cwd?);
+        if path.is_dir() {
+            Some(path)
+        } else if path.is_file() {
+            path.parent().map(|p| p.to_path_buf())
+        } else {
+            None
+        }
+    }
+
     #[tauri::command]
     pub fn create_pty_session(
         manager: tauri::State<'_, PtyManager>,
@@ -159,28 +284,21 @@ mod unix_impl {
         on_event: Channel<PtyEvent>,
     ) -> Result<String, String> {
         let mut inner = manager.inner.lock().unwrap();
-        ensure_host(&mut inner)?;
-
-        let mut stream = connect().map_err(|e| e.to_string())?;
-        send_request(
-            &mut stream,
-            &Request::Create {
-                cwd: options.cwd,
-                cols: options.cols.max(1),
-                rows: options.rows.max(1),
-                color_fgbg: options.color_fgbg,
-            },
-        )
-        .map_err(|e| e.to_string())?;
-
-        let line = read_header_line(&mut stream).map_err(|e| e.to_string())?;
-        let reply: CreateReply = serde_json::from_str(&line)
-            .map_err(|_| format!("host rejected create: {line}"))?;
-
-        let write_half = stream.try_clone().map_err(|e| e.to_string())?;
-        spawn_reader(stream, on_event);
-        inner.sessions.insert(reply.session_id.clone(), write_half);
-        Ok(reply.session_id)
+        if host_ready(&mut inner) {
+            match host_create(&mut inner, &options) {
+                Ok((id, read_half)) => {
+                    spawn_reader(read_half, on_event);
+                    return Ok(id);
+                }
+                Err(e) => {
+                    // Host was up but this create failed — degrade to in-process
+                    // rather than failing the terminal outright.
+                    eprintln!("[pty] host create failed, using in-process fallback: {e}");
+                    inner.host_unavailable = true;
+                }
+            }
+        }
+        create_local(&manager.local_ids, &mut inner, options, on_event)
     }
 
     #[tauri::command]
@@ -190,7 +308,9 @@ mod unix_impl {
         on_event: Channel<PtyEvent>,
     ) -> Result<bool, String> {
         let mut inner = manager.inner.lock().unwrap();
-        ensure_host(&mut inner)?;
+        if !host_ready(&mut inner) {
+            return Ok(false); // no host → nothing survived; caller creates fresh
+        }
 
         let mut stream = match connect() {
             Ok(s) => s,
@@ -208,7 +328,7 @@ mod unix_impl {
 
         let write_half = stream.try_clone().map_err(|e| e.to_string())?;
         spawn_reader(stream, on_event);
-        inner.sessions.insert(options.session_id.clone(), write_half);
+        inner.sessions.insert(options.session_id.clone(), Backend::Host(write_half));
         drop(inner);
 
         // Match the reattached PTY to the current viewport.
@@ -223,12 +343,20 @@ mod unix_impl {
         data: String,
     ) -> Result<(), String> {
         let mut inner = manager.inner.lock().unwrap();
-        let stream = inner
+        match inner
             .sessions
             .get_mut(&session_id)
-            .ok_or_else(|| format!("unknown pty session: {session_id}"))?;
-        stream.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-        stream.flush().map_err(|e| e.to_string())
+            .ok_or_else(|| format!("unknown pty session: {session_id}"))?
+        {
+            Backend::Host(stream) => {
+                stream.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+                stream.flush().map_err(|e| e.to_string())
+            }
+            Backend::Local(pty) => {
+                pty.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+                pty.writer.flush().map_err(|e| e.to_string())
+            }
+        }
     }
 
     #[tauri::command]
@@ -238,9 +366,22 @@ mod unix_impl {
         cols: u16,
         rows: u16,
     ) -> Result<(), String> {
-        // Resize is a one-shot control message so it never contends with the
-        // session's raw data pipe.
-        let _ = manager; // control ops don't need session state
+        // Local sessions resize their PTY directly (under the lock); host
+        // sessions get a one-shot control message so it never contends with the
+        // raw data pipe.
+        {
+            let inner = manager.inner.lock().unwrap();
+            match inner.sessions.get(&session_id) {
+                Some(Backend::Local(pty)) => {
+                    return pty
+                        .master
+                        .resize(PtySize { rows: rows.max(1), cols: cols.max(1), pixel_width: 0, pixel_height: 0 })
+                        .map_err(|e| e.to_string());
+                }
+                Some(Backend::Host(_)) => {} // handled below, after releasing the lock
+                None => return Ok(()), // unknown session → no-op
+            }
+        }
         let mut stream = connect().map_err(|e| e.to_string())?;
         send_request(&mut stream, &Request::Resize { session_id, cols, rows })
             .map_err(|e| e.to_string())?;
@@ -253,17 +394,24 @@ mod unix_impl {
         manager: tauri::State<'_, PtyManager>,
         session_id: String,
     ) -> Result<(), String> {
-        // Intentional close: tell the host to kill the shell (so it does NOT
-        // resurrect), then drop our data connection. Detach-on-quit is different
-        // — it happens implicitly when the app process dies and its sockets
-        // close, which the host treats as "keep alive for the grace window".
-        let mut inner = manager.inner.lock().unwrap();
-        inner.sessions.remove(&session_id);
-        drop(inner);
-
-        if let Ok(mut stream) = connect() {
-            let _ = send_request(&mut stream, &Request::Close { session_id });
-            let _ = read_header_line(&mut stream);
+        // Intentional close. For a host session: tell the host to kill the shell
+        // (so it does NOT resurrect) then drop our connection. Detach-on-quit is
+        // different — it happens implicitly when the app dies and its sockets
+        // close, which the host treats as "keep alive for the grace window". For
+        // a local session: kill the child directly.
+        let backend = manager.inner.lock().unwrap().sessions.remove(&session_id);
+        match backend {
+            Some(Backend::Host(_)) => {
+                if let Ok(mut stream) = connect() {
+                    let _ = send_request(&mut stream, &Request::Close { session_id });
+                    let _ = read_header_line(&mut stream);
+                }
+            }
+            Some(Backend::Local(mut pty)) => {
+                let _ = pty.child.kill();
+                let _ = pty.child.wait();
+            }
+            None => {}
         }
         Ok(())
     }
