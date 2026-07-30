@@ -886,9 +886,9 @@ body {
 .rt-claude-composer-shell {
   position: relative;
   z-index: 20;
-  background-color: var(--rt-surface-strong);
-  border-top: var(--rt-border-width) solid var(--rt-border);
-  box-shadow: 0 -8px 24px color-mix(in srgb, var(--rt-bg) 10%, transparent);
+  background-color: transparent;
+  border-top: none;
+  box-shadow: none;
 }
 
 .rt-claude-composer textarea:focus,
@@ -902,10 +902,10 @@ body {
 }
 
 [data-theme="glass"] .rt-claude-composer-shell {
-  background-color: rgba(255, 255, 255, 0.82);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
+  background-color: transparent;
+  border-top: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .rt-input.rt-claude-composer-active {
