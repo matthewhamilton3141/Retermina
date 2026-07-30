@@ -52,6 +52,7 @@ import {
   type ClaudeModelChoice,
   type ClaudePanelView,
 } from "../../store/claudeSessions";
+import { usePromptHistoryStore } from "../../store/promptHistory";
 import { useScheduleDraft } from "../../store/scheduledPrompts";
 import { useTheme } from "../../theme/ThemeProvider";
 import ClaudeControlBar from "./ClaudeControlBar";
@@ -683,6 +684,45 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
   const activeSettingValue =
     settingKind === "model" ? modelChoice : session?.permissionMode ?? permissionMode;
 
+  // Shell-style history autosuggest: as you type, offer the most recent
+  // prompt for this project that starts with the same text as faint ghost
+  // text, accepted with Tab — mirroring the CLI's own inline suggestion,
+  // which recalls from the same persistent, per-project history (see
+  // `~/.claude/history.jsonl`: one entry per submission, keyed by cwd,
+  // surviving restarts and spanning every past conversation in that
+  // project — not just the current one).
+  const projectHistory = usePromptHistoryStore((s) => (cwd ? s.history[cwd] : undefined));
+  const recordPromptHistory = usePromptHistoryStore((s) => s.record);
+  const [caretAtEnd, setCaretAtEnd] = useState(true);
+  const syncCaretAtEnd = useCallback(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    setCaretAtEnd(el.selectionStart === el.value.length && el.selectionEnd === el.value.length);
+  }, []);
+  const historySuggestion = useMemo(() => {
+    const trimmed = draft.trim();
+    if (trimmed.length < 2 || draft.includes("\n") || slashMenuVisible || settingMenuVisible) {
+      return null;
+    }
+    const entries = projectHistory ?? [];
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (entry.includes("\n") || entry.length <= draft.length) continue;
+      if (entry.toLowerCase().startsWith(draft.toLowerCase())) return entry;
+    }
+    return null;
+  }, [draft, projectHistory, slashMenuVisible, settingMenuVisible]);
+  const acceptHistorySuggestion = useCallback(() => {
+    if (!historySuggestion) return;
+    setDraft(workspaceId, historySuggestion);
+    setDismissedSlashDraft(null);
+    requestAnimationFrame(() => {
+      const el = composerRef.current;
+      el?.setSelectionRange(historySuggestion.length, historySuggestion.length);
+      setCaretAtEnd(true);
+    });
+  }, [historySuggestion, setDraft, workspaceId]);
+
   const applySetting = (option: ClaudeSettingOption) => {
     if (settingKind === "model") {
       // changeModel handles the confirmation + "Model → …" notice.
@@ -759,6 +799,12 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
   const submitDraft = useCallback(() => {
     const prompt = draft.trim();
     if (!prompt) return;
+    // Every prompt that actually gets submitted — agent turn, terminal-routed
+    // slash command, or `!shell` — joins this project's history, same as
+    // Claude Code's own history.jsonl records everything sent at the prompt.
+    // (Rejected submissions, e.g. while `!canSubmit`, don't count — nothing
+    // was actually sent.)
+    const record = () => { if (cwd) recordPromptHistory(cwd, prompt); };
     // `!command` runs locally — bash-mode has no headless stream-json
     // equivalent (Claude just treats "!ls" as literal chat text), so this
     // never touches Claude and works regardless of `canSubmit`.
@@ -766,7 +812,10 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
       setDraft(workspaceId, "");
       setDismissedSlashDraft(null);
       const shellCommand = prompt.slice(1).trim();
-      if (shellCommand) runShellCommand(shellCommand);
+      if (shellCommand) {
+        record();
+        runShellCommand(shellCommand);
+      }
       return;
     }
     if (!canSubmit) return;
@@ -774,11 +823,16 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     if (settingInfo) {
       const options = filterClaudeSettingOptions(settingInfo.kind, settingInfo.query);
       const option = options[settingSelection] ?? options[0];
-      if (option) applySetting(option);
-      else setDraft(workspaceId, "");
+      if (option) {
+        record();
+        applySetting(option);
+      } else {
+        setDraft(workspaceId, "");
+      }
       return;
     }
     const command = resolveClaudeSlashCommand(slashCommands, prompt);
+    record();
     if (command?.behavior === "fresh") {
       setDraft(workspaceId, "");
       setDismissedSlashDraft(null);
@@ -799,7 +853,9 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
     applySetting,
     canSubmit,
     switchClaudeView,
+    cwd,
     draft,
+    recordPromptHistory,
     runShellCommand,
     settingInfo,
     settingSelection,
@@ -970,7 +1026,7 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
           )}
           <form
             ref={composerDropRef}
-            className="rt-claude-composer-shell relative shrink-0 px-[clamp(8px,1.5vw,22px)] py-1.5"
+            className="rt-claude-composer-shell relative mx-auto w-full max-w-[1180px] shrink-0 px-[clamp(8px,1.5vw,22px)] py-1.5"
             onSubmit={(event) => {
               event.preventDefault();
               submitDraft();
@@ -998,10 +1054,19 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
               </button>
               <div
                 ref={composerContainerRef}
-                className={`rt-claude-composer rt-input flex items-center px-3 py-1.5 ${
+                className={`rt-claude-composer rt-input relative flex items-center px-3 py-1.5 ${
                   status === "running" ? "rt-claude-composer-active" : ""
                 } ${isComposerDragOver ? "rt-claude-composer-drop" : ""}`}
               >
+                {historySuggestion && caretAtEnd && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 left-3 right-3 flex items-center overflow-hidden whitespace-pre text-[0.86em] leading-[1.45]"
+                  >
+                    <span className="invisible">{draft}</span>
+                    <span className="rt-text-faint">{historySuggestion.slice(draft.length)}</span>
+                  </div>
+                )}
                 <textarea
                   ref={composerRef}
                   value={draft}
@@ -1076,6 +1141,11 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
                         return;
                       }
                     }
+                    if (event.key === "Tab" && historySuggestion && caretAtEnd) {
+                      event.preventDefault();
+                      acceptHistorySuggestion();
+                      return;
+                    }
                     if (event.key === "Escape" && canInterrupt) {
                       event.preventDefault();
                       interruptClaude();
@@ -1086,10 +1156,13 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
                       submitDraft();
                     }
                   }}
+                  onKeyUp={syncCaretAtEnd}
+                  onClick={syncCaretAtEnd}
+                  onSelect={syncCaretAtEnd}
                   rows={1}
                   placeholder="Ask Claude to change, inspect, or run something…"
                   aria-label="Prompt Claude Code"
-                  className="min-h-[22px] min-w-0 flex-1 resize-none bg-transparent text-[0.86em] leading-[1.45] outline-none focus:outline-none focus-visible:outline-none"
+                  className="relative z-10 min-h-[22px] min-w-0 flex-1 resize-none bg-transparent text-[0.86em] leading-[1.45] outline-none focus:outline-none focus-visible:outline-none"
                 />
               </div>
               {canInterrupt ? (

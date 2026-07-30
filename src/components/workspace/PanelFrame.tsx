@@ -45,10 +45,22 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused
   // transform, but computes it in unscaled coords under `zoom`, so highlighting
   // lands offset. Origin top-left + a compensating 1/scale box makes the scaled
   // content fill the panel exactly, matching how `zoom` reflowed layout.
+  //
+  // The compensating box must be positioned absolutely (against the `relative`
+  // wrapper below), not sized via width/height on a flex child: the wrapper is
+  // `flex-1` (flex-basis 0%), and flexbox resolves a flex item's main-axis size
+  // from flex-grow, ignoring an explicit height/width for that axis. Left as a
+  // flex child, only the cross-axis (width) compensation actually took effect —
+  // the main-axis (height) one silently no-opped, so zoomed-out panels rendered
+  // narrower content correctly but left a dead gap below it instead of filling
+  // the panel.
   const contentStyle: CSSProperties | undefined =
     selfZoom || scale === 1
       ? undefined
       : {
+          position: "absolute",
+          top: 0,
+          left: 0,
           transform: `scale(${scale})`,
           transformOrigin: "0 0",
           width: `${100 / scale}%`,
@@ -136,11 +148,16 @@ export function PanelFrame({ icon, title, workspaceId, panelId, onClose, focused
 
       {/* Content: transform-scaled for native-selection panels; self-zooming
           panels (terminal) read the factor from context and scale their font.
-          overflow-hidden lets each panel's own internal scroller handle overflow. */}
-      <div className="min-h-0 flex-1 overflow-hidden" style={contentStyle}>
-        <PanelZoomContext.Provider value={scale}>
-          {children}
-        </PanelZoomContext.Provider>
+          overflow-hidden lets each panel's own internal scroller handle overflow.
+          `relative` gives the scaled child (positioned absolutely, see
+          contentStyle above) a containing block sized by this flex item's
+          normal flex-grow height/width. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className={contentStyle ? undefined : "h-full w-full"} style={contentStyle}>
+          <PanelZoomContext.Provider value={scale}>
+            {children}
+          </PanelZoomContext.Provider>
+        </div>
       </div>
     </div>
   );

@@ -512,7 +512,7 @@ export function ClaudeTranscript({
       className="min-h-0 flex-1 overflow-y-auto"
       aria-live="polite"
     >
-      <div className="min-h-full w-full max-w-[1180px] px-[clamp(12px,2.5vw,36px)] py-2">
+      <div className="mx-auto min-h-full w-full max-w-[1180px] px-[clamp(12px,2.5vw,36px)] py-2">
         {showEmpty ? (
           <div className="flex min-h-[34vh] max-w-xl flex-col items-start justify-end px-3 pb-8 text-left">
             <span className="rt-claude-empty-orb mb-4 flex h-10 w-10 items-center justify-center rounded-xl">
