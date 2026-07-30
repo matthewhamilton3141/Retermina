@@ -242,6 +242,14 @@ export interface ClaudeWorkspacePreference {
   draft: string;
   permissionMode: ClaudePermissionMode;
   model: ClaudeModelChoice;
+  /**
+   * Resume pointer: the Claude session id last active in this workspace, so a
+   * relaunched app reopens that session (`claude --resume`) and rehydrates its
+   * timeline from the on-disk transcript instead of starting a blank one. Only a
+   * pointer — the conversation itself lives in Claude's JSONL. Cleared by "new
+   * chat" so a deliberate reset doesn't resurrect.
+   */
+  sessionId?: string;
 }
 
 interface ClaudeWorkspacePreferencesState {
@@ -250,6 +258,8 @@ interface ClaudeWorkspacePreferencesState {
   setDraft: (workspaceId: string, draft: string) => void;
   setPermissionMode: (workspaceId: string, permissionMode: ClaudePermissionMode) => void;
   setModel: (workspaceId: string, model: ClaudeModelChoice) => void;
+  /** Remember (or clear, with null) the resume pointer for a workspace. */
+  setSessionId: (workspaceId: string, sessionId: string | null) => void;
 }
 
 const DEFAULT_PREFERENCE: ClaudeWorkspacePreference = {
@@ -300,6 +310,17 @@ export const useClaudeWorkspacePreferences = create<ClaudeWorkspacePreferencesSt
           workspaces: {
             ...state.workspaces,
             [workspaceId]: { ...preference(state.workspaces[workspaceId]), model },
+          },
+        })),
+      setSessionId: (workspaceId, sessionId) =>
+        set((state) => ({
+          workspaces: {
+            ...state.workspaces,
+            [workspaceId]: {
+              ...preference(state.workspaces[workspaceId]),
+              // undefined drops the key from the persisted JSON (a clean clear).
+              sessionId: sessionId ?? undefined,
+            },
           },
         })),
     }),
