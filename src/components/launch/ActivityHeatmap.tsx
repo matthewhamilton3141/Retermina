@@ -79,6 +79,7 @@ export function ActivityHeatmap() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -121,6 +122,12 @@ export function ActivityHeatmap() {
     [weeks],
   );
   const thresholds = useMemo(() => levelThresholds(cells), [cells]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = el.scrollWidth;
+  }, [weeks]);
 
   const todayKey = new Date().toISOString().slice(0, 10);
   const todayLines = filled.get(todayKey) ?? 0;
@@ -193,7 +200,7 @@ export function ActivityHeatmap() {
         </p>
       </div>
 
-      <div className="overflow-x-auto">
+      <div ref={scrollRef} className="overflow-x-auto">
         <div className="inline-flex flex-col gap-1">
           <div
             className="relative h-[14px] pl-5"

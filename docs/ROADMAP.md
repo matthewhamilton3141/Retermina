@@ -5,31 +5,6 @@ leverage. The note that matters most for each is **"what actually determines the
 effort"** — several of these sound small and aren't (and one sounds big but is
 mostly already done).
 
-## In progress
-
-### Sessions survive a restart  _(picked up 2026-07-30)_
-Reopen Retermina after a quit / crash / update and find your terminals *back* —
-scrollback visible, in the right tabs + grid layout. Today they're gone: the
-running shells live only in Rust memory (`pty.rs` holds `Child`/`MasterPty`/
-writer handles in a `Mutex<HashMap>`), and `session.ts` deliberately persists
-paths only — *"never any PTY/terminal buffer."* Nothing is saved yet.
-
-Two distinct versions — **not** the same feature, don't conflate:
-
-- **Cheap — "looks restored" (doing this first):** persist each terminal's
-  scrollback to disk; on reopen, repaint it and spawn a *fresh* shell in the
-  same cwd. History + layout come back; anything that was *running* (dev server,
-  ssh) does not — it died with the app. Frontend-heavy + a modest disk-persist
-  path. Delivers ~80% of the "I trust this app" payoff.
-- **Real — "actually still running" (later, maybe never):** keep PTYs alive
-  outside the app (detached/daemon) and reconnect on reopen — the tmux model.
-  Deep `pty.rs` rewrite; treat as a separate epic, decide after the cheap
-  version ships.
-
-**Recommendation:** ship the cheap version, reassess before committing to the
-real one. Layout/tab restore already exists (persisted `retermina.workspaces` +
-per-folder layout memory), so this is mostly "add scrollback to the picture."
-
 ## Big bets (deferred — need real design, not a rushed first cut)
 
 ### Remote / SSH sessions
@@ -80,6 +55,15 @@ polish, low urgency, fun.
 
 ## Done (shipped from this backlog)
 
+- **Sessions survive a restart** _(shipped v0.6.0, 2026-07-30)_ — reopen
+  Retermina after a quit / crash / update and find your terminals *back*. We
+  shipped the **real (live-process) version, not the cheap repaint** we'd
+  planned to do first: PTYs run in a separate session host (the app re-execs
+  *itself* as the host — no sidecar), the app reconnects by session id on launch
+  and replays output buffered while gone. Survives app restart while the machine
+  stays on (not reboot — tmux doesn't either). In-process PTY fallback if the
+  host can't spawn. Claude agents survive too, by *resuming* the on-disk
+  transcript. macOS/linux only; Windows keeps the old in-process impl.
 - **Separate Presets & Looms** — the toolbar **Presets** menu is a lightweight,
   localStorage-backed store of layout-only snapshots; **Looms** remain the full
   theme + layout bundles. (An earlier build unified the two into one library;
