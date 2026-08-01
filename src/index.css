@@ -897,8 +897,15 @@ body {
 }
 
 .rt-claude-composer textarea::selection {
-  color: var(--rt-text);
-  background: color-mix(in srgb, var(--rt-accent) 22%, transparent);
+  color: var(--rt-accent-contrast, #fff);
+  background: color-mix(in srgb, var(--rt-accent) 45%, transparent);
+}
+
+/* Keep the placeholder closer in weight to typed text and the ghost
+ * suggestion tail (both rt-text-muted) so it doesn't read as a separate,
+ * dimmer tier of text next to full-brightness input. */
+.rt-claude-composer textarea::placeholder {
+  color: var(--rt-text-muted);
 }
 
 [data-theme="glass"] .rt-claude-composer-shell {

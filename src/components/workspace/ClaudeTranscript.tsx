@@ -426,8 +426,8 @@ function TimelineItem({
   }
   if (item.kind === "user") {
     return (
-      <div className="rt-claude-item flex justify-end px-3 py-2.5">
-        <div className="max-w-[88%] rounded-xl rounded-br-sm border border-[var(--rt-border)] bg-[var(--rt-surface-hover)] px-3 py-2">
+      <div className="rt-claude-item flex justify-start px-3 py-2.5">
+        <div className="max-w-[88%] rounded-xl rounded-bl-sm border border-[var(--rt-border)] bg-[var(--rt-surface-hover)] px-3 py-2">
           <div className="rt-accent-text mb-1 text-[0.64em] font-semibold uppercase tracking-[0.14em]">
             You
           </div>

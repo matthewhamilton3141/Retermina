@@ -1064,7 +1064,7 @@ export const ClaudeCodePanel = memo(function ClaudeCodePanel({
                     className="pointer-events-none absolute inset-y-0 left-3 right-3 flex items-center overflow-hidden whitespace-pre text-[0.86em] leading-[1.45]"
                   >
                     <span className="invisible">{draft}</span>
-                    <span className="rt-text-faint">{historySuggestion.slice(draft.length)}</span>
+                    <span className="rt-text-muted">{historySuggestion.slice(draft.length)}</span>
                   </div>
                 )}
                 <textarea
